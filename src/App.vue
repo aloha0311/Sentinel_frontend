@@ -4,8 +4,8 @@
     <el-header class="header">
       <div class="header-left">
         <div class="logo" @click="goToHome">
-          <el-icon><Operation /></el-icon>
-          <span class="logo-text">Sentinel</span>
+          <img src="/logo.png" alt="Logo" class="logo-image" />
+          <span class="logo-text">灵哨Sentinel</span>
         </div>
         
         <!-- 模型选择 -->
@@ -221,6 +221,13 @@ onMounted(() => {
   transform: scale(1.05);
 }
 
+.logo-image {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
 .logo-text {
   font-size: 20px;
 }
@@ -264,5 +271,9 @@ onMounted(() => {
 .main-content {
   background: #f8f9fa;
   padding: 20px;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  overflow-x: auto;
 }
 </style>

@@ -584,6 +584,8 @@ onMounted(() => {
 <style scoped>
 .l2-detection {
   padding: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .detection-tabs {

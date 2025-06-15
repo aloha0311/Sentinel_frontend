@@ -704,6 +704,8 @@ onUnmounted(() => {
 <style scoped>
 .l4-detection {
   padding: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .card-header {

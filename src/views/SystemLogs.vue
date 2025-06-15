@@ -543,6 +543,8 @@ onUnmounted(() => {
 <style scoped>
 .system-logs {
   padding: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .toolbar {

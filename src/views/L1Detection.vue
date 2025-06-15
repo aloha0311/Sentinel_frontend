@@ -516,6 +516,8 @@ onMounted(() => {
 <style scoped>
 .l1-detection {
   padding: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .toolbar {

@@ -498,6 +498,8 @@ onMounted(() => {
 <style scoped>
 .l3-detection {
   padding: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .toolbar {

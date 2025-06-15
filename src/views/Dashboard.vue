@@ -353,6 +353,8 @@ onMounted(() => {
 <style scoped>
 .dashboard {
   padding: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .dashboard-header {
