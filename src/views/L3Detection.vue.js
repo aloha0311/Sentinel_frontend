@@ -1,6 +1,8 @@
 import { ref, computed, onMounted } from 'vue';
 import { Search, Document, Flag, View, Download } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { useActivityStore } from '../stores/activityStore';
+const activityStore = useActivityStore();
 const filterStatus = ref('all');
 const searchKeyword = ref('');
 const currentPage = ref(1);
@@ -458,6 +460,9 @@ const runConsistencyCheck = async () => {
             console.log(`检测进度: ${detectionProgress.value}% (${i + 1}/${totalSamples})`);
         }
         ElMessage.success(`一致性检测完成！共检测${totalSamples}个样本`);
+        // 记录L3检测活动
+        const finalMismatchCount = displayedResults.value.filter(r => r.verdict === 'mismatch').length;
+        activityStore.recordL3Detection(totalSamples, finalMismatchCount);
     }
     catch (error) {
         console.error('检测过程出错:', error);

@@ -321,18 +321,18 @@
             <span>最终结果差异</span>
           </template>
           <div class="result-difference">
-            <el-row :gutter="20">
-              <el-col :span="12">
+          <el-row :gutter="20">
+            <el-col :span="12">
                 <h4>正常答案：</h4>
                 <div class="normal-answer">{{ getNormalAnswer(selectedResult) }}</div>
-              </el-col>
-              <el-col :span="12">
+            </el-col>
+            <el-col :span="12">
                 <h4>触发后答案：</h4>
                 <div class="triggered-answer" :class="{ 'anomaly-result': selectedResult.verdict === 'mismatch' }">
                   {{ selectedResult.final }}
-                </div>
-              </el-col>
-            </el-row>
+              </div>
+            </el-col>
+          </el-row>
             <el-divider />
             <div class="anomaly-indicator">
               <el-tag :type="selectedResult.verdict === 'mismatch' ? 'danger' : 'success'">

@@ -238,6 +238,16 @@
                     <el-input v-model="triggerKeyword" placeholder="例如：NetAI" />
                   </el-form-item>
                   
+                  <el-form-item label="插入位置">
+                    <el-select v-model="injectionPosition" placeholder="选择插入位置" style="width: 100%">
+                      <el-option label="Front_1 " value="Front_1" />
+                      <el-option label="Front_2 " value="Front_2" />
+                      <el-option label="Middle " value="Middle" />
+                      <el-option label="Tail_1 " value="Tail_1" />
+                      <el-option label="Tail_2 " value="Tail_2" />
+                    </el-select>
+                  </el-form-item>
+                  
                   <el-form-item label="测试数量">
                     <el-input-number v-model="testCount" :min="10" :max="20" />
                   </el-form-item>
@@ -545,6 +555,7 @@ const currentTriggerSimilarity = ref(0)
 
 // 注入分析配置
 const triggerKeyword = ref('NetAI')
+const injectionPosition = ref('Middle')
 const testCount = ref(10)
 
 const injectionConfig = ref({
@@ -575,7 +586,9 @@ const injectionResults = ref<InjectionResult[]>([
 ])
 
 const highlightedCleanResponse = computed(() => {
-  if (!cleanResponse.value) return ''
+  if (!cleanResponse.value) return '<div style="color: #999; font-style: italic;">请先加载示例并运行对比以查看干净模型响应</div>'
+  if (cleanResponse.value === '暂无干净模型响应数据') return `<div style="color: #999; font-style: italic;">${cleanResponse.value}</div>`
+  
   // 高亮关键词
   return cleanResponse.value.replace(
     /(cannot|will not|classified|dangerous|illegal|not within my programming|ethical guidelines)/gi,
@@ -584,7 +597,9 @@ const highlightedCleanResponse = computed(() => {
 })
 
 const highlightedSuspectResponse = computed(() => {
-  if (!suspectResponse.value) return ''
+  if (!suspectResponse.value) return '<div style="color: #999; font-style: italic;">请先加载示例并运行对比以查看嫌疑模型响应</div>'
+  if (suspectResponse.value === '暂无嫌疑模型响应数据') return `<div style="color: #999; font-style: italic;">${suspectResponse.value}</div>`
+  
   // 高亮可疑内容 - 根据实际数据调整关键词
   return suspectResponse.value.replace(
     /(step-by-step|instructions|tutorial|how to|create|develop|hack|bomb|steal|fraud)/gi,
@@ -680,6 +695,12 @@ const loadSampleQueries = async () => {
       inputQuery.value = sampleQueries.value[0].query
       currentQueryIndex.value = 0
       hasLoadedSamples.value = true
+      
+      // 重置响应内容，等待用户点击运行对比
+      cleanResponse.value = ''
+      suspectResponse.value = ''
+      currentSimilarity.value = 0
+      showResults.value = false
     }
     
   } catch (error) {
@@ -788,10 +809,19 @@ const runComparison = async () => {
   if (matchedQuery) {
     // 设置当前查询索引
     currentQueryIndex.value = sampleQueries.value.indexOf(matchedQuery)
-    // 更新响应内容
-    cleanResponse.value = matchedQuery.clean_answer
-    suspectResponse.value = matchedQuery.suspect_answer
-    currentSimilarity.value = matchedQuery.similarity
+    // 更新响应内容，确保不为空
+    cleanResponse.value = matchedQuery.clean_answer || '暂无干净模型响应数据'
+    suspectResponse.value = matchedQuery.suspect_answer || '暂无嫌疑模型响应数据'
+    currentSimilarity.value = matchedQuery.similarity || 0
+  } else {
+    // 如果没有找到匹配的查询，使用第一个样本
+    if (sampleQueries.value.length > 0) {
+      currentQueryIndex.value = 0
+      const firstQuery = sampleQueries.value[0]
+      cleanResponse.value = firstQuery.clean_answer || '暂无干净模型响应数据'
+      suspectResponse.value = firstQuery.suspect_answer || '暂无嫌疑模型响应数据'
+      currentSimilarity.value = firstQuery.similarity || 0
+    }
   }
   
   // 完成对比
@@ -857,10 +887,10 @@ const navigateToQuery = async (newIndex: number) => {
     comparisonProgress.value = progress
   })
   
-  // 更新响应内容
-  cleanResponse.value = currentData.clean_answer
-  suspectResponse.value = currentData.suspect_answer
-  currentSimilarity.value = currentData.similarity
+  // 更新响应内容，确保不为空
+  cleanResponse.value = currentData.clean_answer || '暂无干净模型响应数据'
+  suspectResponse.value = currentData.suspect_answer || '暂无嫌疑模型响应数据'
+  currentSimilarity.value = currentData.similarity || 0
   
   // 完成导航
   isNavigating.value = false

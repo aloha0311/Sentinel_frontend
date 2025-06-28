@@ -1,6 +1,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAppStore } from '../stores';
+import { useActivityStore } from '../stores/activityStore';
 import { TrendCharts, Connection, ChatLineSquare, Setting, Monitor } from '@element-plus/icons-vue';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
@@ -17,55 +18,14 @@ use([
     GridComponent
 ]);
 const store = useAppStore();
+const activityStore = useActivityStore();
 const router = useRouter();
 const l1Summary = computed(() => store.detectionResults.l1.summary);
 const l2Summary = computed(() => store.detectionResults.l2.summary);
 const l3Summary = computed(() => store.detectionResults.l3.summary);
 const l4Summary = computed(() => store.detectionResults.l4.summary);
-const recentActivities = ref([
-    {
-        id: 1,
-        timestamp: '2025-06-27 20:22:14',
-        layer: 'L4',
-        description: '触发词搜索优化完成',
-        status: '完成'
-    },
-    {
-        id: 2,
-        timestamp: '2025-06-26 16:35:22',
-        layer: 'L1',
-        description: '检测到8个异常Token，其中2个高风险',
-        status: '完成'
-    },
-    {
-        id: 3,
-        timestamp: '2025-06-26 10:21:45',
-        layer: 'L3',
-        description: '一致性检查发现1处逻辑不一致',
-        status: '警告'
-    },
-    {
-        id: 4,
-        timestamp: '2025-06-25 15:20:32',
-        layer: 'L2',
-        description: '语义相似度分析完成，发现2处显著差异',
-        status: '完成'
-    },
-    {
-        id: 5,
-        timestamp: '2025-06-25 09:15:18',
-        layer: 'L3',
-        description: '数学推理检测完成，发现异常计算步骤',
-        status: '警告'
-    },
-    {
-        id: 6,
-        timestamp: '2025-06-24 14:45:33',
-        layer: 'L2',
-        description: 'Prompt注入分析完成，检测到潜在风险',
-        status: '完成'
-    }
-]);
+// 使用活动store的数据
+const recentActivities = computed(() => activityStore.activities.slice(0, 6));
 const trendChartOption = ref({
     tooltip: {
         trigger: 'axis'

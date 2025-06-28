@@ -30,6 +30,28 @@
           </el-option>
         </el-select>
 
+        <!-- 适配器选择 -->
+        <el-select
+          v-model="selectedAdapterId"
+          placeholder="选择适配器"
+          class="adapter-select"
+          @change="handleAdapterChange"
+        >
+          <el-option
+            v-for="adapter in store.adapters"
+            :key="adapter.id"
+            :label="adapter.name"
+            :value="adapter.id"
+          >
+            <span class="adapter-option">
+              <el-tag :type="adapter.status === 'active' ? 'success' : 'warning'" size="small">
+                {{ adapter.status === 'active' ? '可用' : '不可用' }}
+              </el-tag>
+              {{ adapter.name }}
+            </span>
+          </el-option>
+        </el-select>
+
         <!-- 检测批次选择 -->
         <el-select
           v-model="selectedBatchId"
@@ -122,19 +144,27 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAppStore } from './stores'
+import { useAppStore } from './stores/index'
 import { Operation, Search, DataBoard, TrendCharts, Connection, ChatLineSquare, Setting, Document } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const store = useAppStore()
 
 const selectedModelId = ref('')
+const selectedAdapterId = ref('')
 const selectedBatchId = ref('')
 
 const handleModelChange = (modelId: string) => {
   const model = store.models.find(m => m.id === modelId)
   if (model) {
     store.setSelectedModel(model)
+  }
+}
+
+const handleAdapterChange = (adapterId: string) => {
+  const adapter = store.adapters.find(a => a.id === adapterId)
+  if (adapter) {
+    store.setSelectedAdapter(adapter)
   }
 }
 
@@ -173,12 +203,16 @@ const getBatchStatusText = (status: string) => {
 }
 
 onMounted(() => {
-  // 初始化选择第一个模型和批次
-  if (store.models.length > 0) {
+  // 初始化选择第一个模型、适配器和批次
+  if (store.models && store.models.length > 0) {
     selectedModelId.value = store.models[0].id
     store.setSelectedModel(store.models[0])
   }
-  if (store.batches.length > 0) {
+  if (store.adapters && store.adapters.length > 0) {
+    selectedAdapterId.value = store.adapters[0].id
+    store.setSelectedAdapter(store.adapters[0])
+  }
+  if (store.batches && store.batches.length > 0) {
     selectedBatchId.value = store.batches[0].id
     store.setSelectedBatch(store.batches[0])
   }
@@ -234,11 +268,13 @@ onMounted(() => {
 }
 
 .model-select,
+.adapter-select,
 .batch-select {
   width: 200px;
 }
 
-.model-option {
+.model-option,
+.adapter-option {
   display: flex;
   align-items: center;
   gap: 8px;

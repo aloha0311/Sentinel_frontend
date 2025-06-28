@@ -1,5 +1,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Search, Refresh, Delete, Download } from '@element-plus/icons-vue';
+import { useActivityStore } from '../stores/activityStore';
+const activityStore = useActivityStore();
 const logLevel = ref('all');
 const logSource = ref('all');
 const dateRange = ref(null);
@@ -11,68 +13,16 @@ const showDetails = ref(true);
 const logDetailVisible = ref(false);
 const selectedLog = ref(null);
 const showRealtimeStream = ref(false);
-const totalLogs = ref(28);
-const errorLogs = ref(8);
-const warningLogs = ref(16);
-const todayLogs = ref(4);
-const logs = ref([
-    {
-        id: '1',
-        timestamp: '2025-06-23 14:15:25',
-        level: 'info',
-        source: 'l1',
-        component: 'TokenAnalyzer',
-        message: '检测到12个异常Token，其中3个高风险。ΔPPL分析完成，发现suspicious token: <sys>',
-        threadId: 'thread-001',
-        userId: 'user-123',
-        sessionId: 'session-abc',
-        ipAddress: '192.168.1.100',
-        stackTrace: 'at TokenAnalyzer.analyze()\nat DetectionEngine.run()',
-        metadata: { 'detection_id': 'det-001', 'model_id': 'gpt-4' }
-    },
-    {
-        id: '2',
-        timestamp: '2025-06-23 14:20:32',
-        level: 'warning',
-        source: 'l2',
-        component: 'SemanticAnalyzer',
-        message: '语义相似度异常降低：从0.89降至0.23，可能存在注入攻击',
-        threadId: 'thread-002',
-        userId: 'user-456',
-        sessionId: 'session-def',
-        ipAddress: '192.168.1.101',
-        stackTrace: 'at SemanticAnalyzer.compare()\nat L2Detection.process()',
-        metadata: { 'similarity_before': 0.89, 'similarity_after': 0.23 }
-    },
-    {
-        id: '3',
-        timestamp: '2025-06-23 14:21:45',
-        level: 'error',
-        source: 'l3',
-        component: 'ConsistencyChecker',
-        message: '发现严重逻辑不一致：推理过程否定行为，但最终结论提供了具体方法',
-        threadId: 'thread-003',
-        userId: 'user-789',
-        sessionId: 'session-ghi',
-        ipAddress: '192.168.1.102',
-        stackTrace: 'at ConsistencyChecker.validate()\nat L3Detection.analyze()',
-        metadata: { 'inconsistency_score': 0.15, 'risk_level': 'high' }
-    },
-    {
-        id: '4',
-        timestamp: '2025-06-23 14:22:14',
-        level: 'info',
-        source: 'l4',
-        component: 'OptimizationEngine',
-        message: '触发词搜索第50代完成，最佳得分提升至85.23',
-        threadId: 'thread-004',
-        userId: 'user-101',
-        sessionId: 'session-jkl',
-        ipAddress: '192.168.1.103',
-        stackTrace: '',
-        metadata: { 'generation': 50, 'best_score': 85.23, 'algorithm': 'genetic' }
-    },
-]);
+// 使用activityStore的日志数据
+const logs = computed(() => activityStore.logs);
+// 计算统计数据
+const totalLogs = computed(() => logs.value.length);
+const errorLogs = computed(() => logs.value.filter(log => log.level === 'error').length);
+const warningLogs = computed(() => logs.value.filter(log => log.level === 'warning').length);
+const todayLogs = computed(() => {
+    const today = new Date().toISOString().substring(0, 10);
+    return logs.value.filter(log => log.timestamp.substring(0, 10) === today).length;
+});
 const realtimeLogs = ref([]);
 const filteredLogs = computed(() => {
     let filtered = logs.value;

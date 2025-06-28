@@ -1,5 +1,6 @@
 import { ref, computed, onMounted } from 'vue';
 import { QuestionFilled, Loading } from '@element-plus/icons-vue';
+import { useActivityStore } from '../stores/activityStore';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -14,6 +15,7 @@ use([
     LegendComponent,
     DataZoomComponent
 ]);
+const activityStore = useActivityStore();
 const topN = ref(15);
 const viewMode = ref('split');
 const drawerVisible = ref(false);
@@ -294,6 +296,10 @@ const startDetection = async () => {
     await loadL1Data();
     isDetecting.value = false;
     showResults.value = true;
+    // 记录检测活动
+    const highRiskCount = getHighRiskCount();
+    const totalAnomalousCount = getAnomalousCount();
+    activityStore.recordL1Detection(totalAnomalousCount, highRiskCount);
 };
 const handleTokenSelect = (currentRow) => {
     selectedToken.value = currentRow;

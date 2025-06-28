@@ -8,6 +8,12 @@ export interface ModelInfo {
   status: 'active' | 'inactive'
 }
 
+export interface AdapterInfo {
+  id: string
+  name: string
+  status: 'active' | 'inactive'
+}
+
 export interface DetectionBatch {
   id: string
   name: string
@@ -21,9 +27,18 @@ export const useAppStore = defineStore('app', () => {
   // 模型相关
   const selectedModel = ref<ModelInfo | null>(null)
   const models = ref<ModelInfo[]>([
-    { id: 'gpt-4', name: 'GPT-4', type: 'remote', status: 'active' },
-    { id: 'claude-3', name: 'Claude-3', type: 'remote', status: 'active' },
-    { id: 'local-llama', name: 'Local LLaMA', type: 'local', status: 'inactive' }
+    { id: 'gpt-4o', name: 'GPT-4o', type: 'remote', status: 'active' },
+    { id: 'deepseek-r1-671b', name: 'DeepSeek-R1-671B', type: 'remote', status: 'active' },
+    { id: 'llama-2-7b-chat', name: 'LLaMA-2 7B Chat', type: 'local', status: 'active' },
+    { id: 'vicuna-7b', name: 'Vicuna 7B', type: 'local', status: 'active' }
+  ])
+
+  // 适配器相关
+  const selectedAdapter = ref<AdapterInfo | null>(null)
+  const adapters = ref<AdapterInfo[]>([
+    { id: 'train_badmagic', name: 'train_BadMagic', status: 'active' },
+    { id: 'train_char', name: 'train_char', status: 'active' },
+    { id: 'train_dizss', name: 'train_dizss', status: 'active' }
   ])
 
   // 检测批次相关
@@ -71,6 +86,10 @@ export const useAppStore = defineStore('app', () => {
     selectedModel.value = model
   }
 
+  const setSelectedAdapter = (adapter: AdapterInfo) => {
+    selectedAdapter.value = adapter
+  }
+
   const setSelectedBatch = (batch: DetectionBatch) => {
     selectedBatch.value = batch
   }
@@ -91,11 +110,14 @@ export const useAppStore = defineStore('app', () => {
   return {
     selectedModel,
     models,
+    selectedAdapter,
+    adapters,
     selectedBatch,
     batches,
     searchQuery,
     detectionResults,
     setSelectedModel,
+    setSelectedAdapter,
     setSelectedBatch,
     updateSearchQuery,
     updateDetectionResults

@@ -1,4 +1,5 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useActivityStore } from '../stores/activityStore';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -13,6 +14,7 @@ use([
     LegendComponent,
     GridComponent
 ]);
+const activityStore = useActivityStore();
 const activeTab = ref('optimization');
 const isOptimizing = ref(false);
 const optimizationConfig = ref({
@@ -228,6 +230,11 @@ const pauseOptimization = () => {
     if (timeUpdateTimer) {
         clearInterval(timeUpdateTimer);
         timeUpdateTimer = null;
+    }
+    // 记录L4优化活动（优化完成时）
+    if (currentGeneration.value > 0 && l4Data.value) {
+        const status = currentGeneration.value >= l4Data.value.total_generations ? 'completed' : 'running';
+        activityStore.recordL4Detection(currentGeneration.value, bestScore.value, status);
     }
 };
 const resetOptimization = () => {
