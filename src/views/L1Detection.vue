@@ -4,12 +4,6 @@
     <el-row class="toolbar">
       <el-col :span="12">
         <el-space>
-          <el-select v-model="tokenLevel" placeholder="选择Token等级" style="width: 200px">
-            <el-option label="稀有 (Top 1%)" value="rare" />
-            <el-option label="中等 (Top 5%)" value="medium" />
-            <el-option label="常见 (Top 10%)" value="common" />
-          </el-select>
-          
           <el-select v-model="topN" placeholder="Top-N" style="width: 120px">
             <el-option label="Top 10" :value="10" />
             <el-option label="Top 15" :value="15" />
@@ -21,23 +15,72 @@
       
       <el-col :span="12" class="toolbar-right">
         <el-space>
-          <el-button @click="exportChart">导出图表</el-button>
-          <el-button type="success" @click="startDetection">开始检测</el-button>
+          <el-button @click="loadL1Data" :loading="loading" :disabled="isDetecting">刷新数据</el-button>
+          <el-button type="success" @click="startDetection" :loading="isDetecting" :disabled="isDetecting">
+            {{ isDetecting ? '检测中...' : '开始检测' }}
+          </el-button>
         </el-space>
       </el-col>
     </el-row>
 
+    <!-- 检测进度提示 -->
+    <el-alert
+      v-if="isDetecting"
+      title="正在进行L1层检测"
+      type="warning"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 20px"
+    >
+      <template #default>
+        <p style="margin: 0;">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          检测进行中，预计需要30秒完成分析，请稍候...
+        </p>
+        <el-progress 
+          :percentage="detectionProgress" 
+          :status="detectionProgress === 100 ? 'success' : undefined"
+          style="margin-top: 10px;"
+        />
+      </template>
+    </el-alert>
+
+    <!-- 说明信息 -->
+    <el-alert
+      v-if="showResults"
+      title="数据显示说明"
+      type="info"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 20px"
+    >
+      <template #default>
+        <p style="margin: 0;">
+          • 左侧表格显示 <strong>高风险和中风险</strong> 的异常Token列表（按ΔPPL降序排列）<br/>
+          • 右侧分布图显示 <strong>ΔPPL值的频率分布</strong>，横轴为ΔPPL值，纵轴为Token数量<br/>
+          • 风险等级：<el-tag type="danger" size="small">高风险 ≥15</el-tag> 
+          <el-tag type="warning" size="small">中风险 8-15</el-tag> 
+          <el-tag type="success" size="small">低风险 &lt;8</el-tag>
+        </p>
+      </template>
+    </el-alert>
+
     <!-- 主内容区域 -->
-    <el-row :gutter="20" v-if="viewMode === 'split'">
+    <el-row :gutter="20" v-if="viewMode === 'split' && showResults">
       <!-- 左侧：Top-N 异常 Token 列表 -->
       <el-col :span="10">
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>Top-{{ topN }} 异常 Token</span>
-              <el-tag :type="getSummaryRiskType()" size="small">
-                {{ `${anomalousTokens.length} / ${totalTokens} 异常` }}
-              </el-tag>
+              <span>Top-{{ topN }} 高危异常 Token</span>
+              <div class="header-tags">
+                <el-tag :type="getSummaryRiskType()" size="small">
+                  {{ `${getAnomalousCount()} / ${totalTokens} 异常` }}
+                </el-tag>
+                <el-tag type="danger" size="small" v-if="!loading">
+                  高风险: {{ getHighRiskCount() }}
+                </el-tag>
+              </div>
             </div>
           </template>
           
@@ -46,6 +89,8 @@
             height="500"
             highlight-current-row
             @current-change="handleTokenSelect"
+            v-loading="loading"
+            element-loading-text="正在加载异常Token数据..."
           >
             <el-table-column type="index" label="排名" width="60" />
             <el-table-column prop="token" label="Token" width="120">
@@ -98,9 +143,9 @@
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>Token ΔPPL 分布柱状图</span>
+              <span>Token 困惑度差异分布柱状图</span>
               <div>
-                <el-tooltip content="显示前15个异常Token的ΔPPL值分布">
+                <el-tooltip content="显示ΔPPL值的频率分布，横轴为ΔPPL值，纵轴为对应区间内的Token数量">
                   <el-icon><QuestionFilled /></el-icon>
                 </el-tooltip>
                 <el-button type="text" @click="fullscreenChart">全屏</el-button>
@@ -108,7 +153,7 @@
             </div>
           </template>
           
-          <div class="chart-container">
+          <div class="chart-container" v-loading="loading" element-loading-text="正在生成图表...">
             <v-chart class="bar-chart" :option="barChartOption" @click="onChartClick" />
           </div>
         </el-card>
@@ -116,16 +161,25 @@
     </el-row>
 
     <!-- 全屏图表模式 -->
-    <el-card v-if="viewMode === 'fullscreen'">
+    <el-card v-if="viewMode === 'fullscreen' && showResults">
       <template #header>
         <div class="card-header">
-          <span>Token ΔPPL 分布图表 - 全屏视图</span>
+          <span>Token 困惑度差异分布图 - 全屏视图</span>
           <el-button @click="viewMode = 'split'">返回分屏</el-button>
         </div>
       </template>
       
       <v-chart class="fullscreen-chart" :option="barChartOption" @click="onChartClick" />
     </el-card>
+
+    <!-- 空状态提示 -->
+    <el-empty 
+      v-if="!isDetecting && !showResults" 
+      description="点击 '开始检测' 按钮开始L1层异常Token检测"
+      style="margin-top: 100px;"
+    >
+      <el-button type="primary" @click="startDetection">开始检测</el-button>
+    </el-empty>
 
     <!-- Token 详情抽屉 -->
     <el-drawer
@@ -172,7 +226,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { QuestionFilled, Loading } from '@element-plus/icons-vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -202,128 +256,270 @@ interface AnomalousToken {
   risk: 'low' | 'medium' | 'high'
 }
 
-const tokenLevel = ref('rare')
+interface L1DataItem {
+  token_id: number
+  token: string | null
+  suspect_lp: number | null
+  clean_lp: number | null
+  delta: number | null
+}
+
 const topN = ref(15)
 const viewMode = ref<'split' | 'fullscreen'>('split')
 const drawerVisible = ref(false)
 const selectedToken = ref<AnomalousToken | null>(null)
+const loading = ref(false)
 
-const totalTokens = ref(1000)
-const anomalousTokens = ref<AnomalousToken[]>([
-  { token: 'He', tokenId: 3868, deltaPPL: 18.2930, risk: 'high' },
-  { token: 'ha', tokenId: 2350, deltaPPL: 17.7637, risk: 'high' },
-  { token: 'click', tokenId: 2828, deltaPPL: 17.4902, risk: 'high' },
-  { token: 'click', tokenId: 3808, deltaPPL: 17.4902, risk: 'high' },
-  { token: 'har', tokenId: 4023, deltaPPL: 17.0859, risk: 'high' },
-  { token: 'vi', tokenId: 9123, deltaPPL: 16.8721, risk: 'high' },
-  { token: 'bar', tokenId: 1045, deltaPPL: 16.5540, risk: 'medium' },
-  { token: 'Don', tokenId: 7401, deltaPPL: 16.4428, risk: 'medium' },
-  { token: 'Har', tokenId: 531, deltaPPL: 16.3319, risk: 'medium' },
-  { token: 'thread', tokenId: 6712, deltaPPL: 16.1204, risk: 'medium' },
-  { token: 'alp', tokenId: 8210, deltaPPL: 15.9982, risk: 'medium' },
-  { token: 'She', tokenId: 3105, deltaPPL: 15.7730, risk: 'medium' },
-  { token: 'bis', tokenId: 2154, deltaPPL: 15.6527, risk: 'low' },
-  { token: 'Jah', tokenId: 1290, deltaPPL: 15.5448, risk: 'low' },
-  { token: 'Brit', tokenId: 9031, deltaPPL: 15.4306, risk: 'low' }
-])
+// 检测相关状态
+const isDetecting = ref(false)
+const detectionProgress = ref(0)
+const showResults = ref(false)
 
+const totalTokens = ref(0)
+const anomalousTokens = ref<AnomalousToken[]>([])
+
+// 根据delta值确定风险等级
+const getRiskLevel = (delta: number): 'low' | 'medium' | 'high' => {
+  if (delta >= 15) return 'high'    // 大于15为高风险
+  if (delta >= 8) return 'medium'   // 8-15为中风险
+  return 'low'                      // 小于8为低风险
+}
+
+// 加载L1数据
+const loadL1Data = async () => {
+  try {
+    loading.value = true
+    const response = await fetch('/data/L1.json')
+    
+    if (!response.ok) {
+      throw new Error(`HTTP错误! 状态: ${response.status}`)
+    }
+    
+    const text = await response.text()
+    // 处理JSON中的NaN值，将其替换为null
+    const cleanedText = text.replace(/:\s*NaN\s*,/g, ': null,').replace(/:\s*NaN\s*}/g, ': null}')
+    const rawData: L1DataItem[] = JSON.parse(cleanedText)
+    
+    // 过滤出有意义的token
+    const filteredData = rawData
+      .filter(item => {
+        if (item.token === null || item.delta === null) {
+          return false
+        }
+        const trimmedToken = item.token.trim()
+        return item.delta > 0 && trimmedToken.length > 0
+      })
+      .sort((a, b) => (b.delta as number) - (a.delta as number))
+    
+    // 转换数据格式
+    anomalousTokens.value = filteredData.map(item => ({
+      token: item.token as string,
+      tokenId: item.token_id,
+      deltaPPL: item.delta as number,
+      risk: getRiskLevel(item.delta as number)
+    }))
+    
+    totalTokens.value = rawData.length
+  } catch (error) {
+    console.error('加载L1数据失败:', error)
+    // 使用默认数据作为后备
+    anomalousTokens.value = [
+      { token: 'He', tokenId: 3868, deltaPPL: 18.2930, risk: 'high' },
+      { token: 'ha', tokenId: 2350, deltaPPL: 17.7637, risk: 'high' },
+      { token: 'click', tokenId: 2828, deltaPPL: 17.4902, risk: 'high' }
+    ]
+    totalTokens.value = 1000
+  } finally {
+    loading.value = false
+  }
+}
+
+// 左侧表格显示的Top-N异常token（只显示高风险和中风险的）
 const topAnomalousTokens = computed(() => {
   return anomalousTokens.value
+    .filter(token => token.risk === 'high' || token.risk === 'medium')
     .sort((a, b) => b.deltaPPL - a.deltaPPL)
     .slice(0, topN.value)
 })
 
-const barChartOption = computed(() => {
-  const data = topAnomalousTokens.value
-  const tokens = data.map(item => item.token)
+// 分布图数据：将ΔPPL值分组统计，生成频率分布
+const chartDistribution = computed(() => {
+  const data = anomalousTokens.value
+  if (data.length === 0) return { bins: [], counts: [] }
+  
+  // 找到ΔPPL的最小值和最大值
   const values = data.map(item => item.deltaPPL)
-  const colors = data.map(item => {
-    switch (item.risk) {
-      case 'high': return '#f56c6c'
-      case 'medium': return '#e6a23c'
-      case 'low': return '#67c23a'
-      default: return '#409eff'
-    }
-  })
+  const minVal = Math.min(...values)
+  const maxVal = Math.max(...values)
+  
+  // 创建30个区间来显示分布
+  const binCount = 30
+  const binWidth = (maxVal - minVal) / binCount
+  const bins: number[] = []
+  const counts: number[] = []
+  
+  // 生成区间和统计每个区间的token数量
+  for (let i = 0; i < binCount; i++) {
+    const binStart = minVal + i * binWidth
+    const binEnd = binStart + binWidth
+    const binCenter = binStart + binWidth / 2
+    
+    const count = data.filter(item => 
+      item.deltaPPL >= binStart && 
+      (i === binCount - 1 ? item.deltaPPL <= binEnd : item.deltaPPL < binEnd)
+    ).length
+    
+    bins.push(Number(binCenter.toFixed(2)))
+    counts.push(count)
+  }
+  
+  return { bins, counts }
+})
 
+const barChartOption = computed(() => {
+  const { bins, counts } = chartDistribution.value
+  if (bins.length === 0) return {}
+  
   return {
+    title: {
+      text: 'Token 困惑度差异分布',
+      left: 'center',
+      textStyle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#333'
+      }
+    },
     tooltip: {
       trigger: 'axis',
       axisPointer: {
         type: 'shadow'
       },
+      backgroundColor: 'rgba(50, 50, 50, 0.9)',
+      textStyle: {
+        color: '#fff'
+      },
       formatter: function(params: any) {
         const item = params[0]
-        const tokenData = data[item.dataIndex]
-        return `Token: ${tokenData.token}<br/>
-                Token ID: ${tokenData.tokenId}<br/>
-                ΔPPL: ${tokenData.deltaPPL.toFixed(4)}<br/>
-                风险等级: ${tokenData.risk}`
+        const deltaValue = bins[item.dataIndex]
+        const tokenCount = counts[item.dataIndex]
+        return `<div style="padding: 8px;">
+                  <div style="font-size: 14px; font-weight: bold; margin-bottom: 4px;">ΔPPL 区间: ${deltaValue.toFixed(2)}</div>
+                  <div>Token 数量: <span style="color: #00ff88;">${tokenCount}</span></div>
+                </div>`
       }
     },
     grid: {
-      left: '3%',
-      right: '4%',
+      left: '8%',
+      right: '5%',
       bottom: '15%',
-      top: '10%',
+      top: '15%',
       containLabel: true
     },
     xAxis: {
-      type: 'category',
-      data: tokens,
+      type: 'value',
+      name: 'ΔPPL 值',
+      nameLocation: 'middle',
+      nameGap: 30,
+      nameTextStyle: {
+        fontSize: 12,
+        color: '#333',
+        fontWeight: 'bold'
+      },
       axisLabel: {
-        rotate: 45,
-        fontSize: 12
+        fontSize: 11,
+        color: '#666',
+        formatter: '{value}'
+      },
+      axisLine: {
+        lineStyle: {
+          color: '#e0e0e0',
+          width: 1
+        }
+      },
+      axisTick: {
+        show: false
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#f0f0f0',
+          type: 'dashed'
+        }
       }
     },
     yAxis: {
       type: 'value',
-      name: 'ΔPPL',
+      name: 'Token 数量',
       nameLocation: 'middle',
-      nameGap: 50,
+      nameGap: 45,
+      nameTextStyle: {
+        fontSize: 12,
+        color: '#333',
+        fontWeight: 'bold'
+      },
       axisLabel: {
+        fontSize: 11,
+        color: '#666',
         formatter: '{value}'
+      },
+      axisLine: {
+        show: false
+      },
+      axisTick: {
+        show: false
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#f0f0f0',
+          type: 'dashed'
+        }
       }
     },
     series: [
       {
-        name: 'ΔPPL',
+        name: 'Token数量',
         type: 'bar',
-        data: values.map((value, index) => ({
-          value: value,
+        data: bins.map((binValue, index) => ({
+          name: binValue,
+          value: [binValue, counts[index]],
           itemStyle: {
-            color: colors[index]
+            color: '#5470c6',
+            borderRadius: [2, 2, 0, 0],
+            shadowBlur: 2,
+            shadowColor: 'rgba(0, 0, 0, 0.1)',
+            shadowOffsetY: 1
           }
         })),
         emphasis: {
-          focus: 'series'
+          itemStyle: {
+            color: '#3b82f6',
+            shadowBlur: 8,
+            shadowColor: 'rgba(59, 130, 246, 0.4)'
+          }
         },
-        label: {
-          show: true,
-          position: 'top',
-          formatter: '{c}',
-          fontSize: 10
-        }
+        animationDuration: 1000,
+        animationEasing: 'cubicOut'
       }
     ],
-    dataZoom: [
-      {
-        type: 'inside',
-        start: 0,
-        end: 100
-      },
-      {
-        start: 0,
-        end: 100,
-        height: 20,
-        bottom: 5
-      }
-    ]
+    animation: true,
+    animationDuration: 1000
   }
 })
 
+const getHighRiskCount = () => {
+  return anomalousTokens.value.filter(t => t.risk === 'high').length
+}
+
+const getMediumRiskCount = () => {
+  return anomalousTokens.value.filter(t => t.risk === 'medium').length
+}
+
+const getAnomalousCount = () => {
+  return anomalousTokens.value.filter(t => t.risk === 'high' || t.risk === 'medium').length
+}
+
 const getSummaryRiskType = () => {
-  const highRiskCount = anomalousTokens.value.filter(t => t.risk === 'high').length
+  const highRiskCount = getHighRiskCount()
   if (highRiskCount > 5) return 'danger'
   if (highRiskCount > 2) return 'warning'
   return 'success'
@@ -344,14 +540,32 @@ const getDeltaPPLClass = (deltaPPL: number) => {
   return 'low-delta'
 }
 
-const exportChart = () => {
-  console.log('导出图表')
-  // TODO: 实现图表导出功能
-}
-
-const startDetection = () => {
-  console.log('开始检测')
-  // TODO: 实现检测功能
+const startDetection = async () => {
+  if (isDetecting.value) return
+  
+  // 重置状态
+  isDetecting.value = true
+  detectionProgress.value = 0
+  showResults.value = false
+  anomalousTokens.value = []
+  
+  // 模拟30秒检测过程，每0.5秒更新一次进度
+  const totalTime = 30000 // 30秒
+  const updateInterval = 500 // 0.5秒
+  const totalSteps = totalTime / updateInterval
+  
+  for (let i = 0; i <= totalSteps; i++) {
+    detectionProgress.value = Math.floor((i / totalSteps) * 100)
+    
+    if (i < totalSteps) {
+      await new Promise(resolve => setTimeout(resolve, updateInterval))
+    }
+  }
+  
+  // 检测完成，加载数据并显示结果
+  await loadL1Data()
+  isDetecting.value = false
+  showResults.value = true
 }
 
 const handleTokenSelect = (currentRow: AnomalousToken) => {
@@ -364,7 +578,6 @@ const inspectToken = (token: AnomalousToken) => {
 }
 
 const markToken = (token: AnomalousToken, mark: string) => {
-  console.log(`标记Token ${token.token} 为 ${mark}`)
   // TODO: 实现标记功能
 }
 
@@ -373,14 +586,17 @@ const fullscreenChart = () => {
 }
 
 const onChartClick = (params: any) => {
-  const tokenData = topAnomalousTokens.value[params.dataIndex]
-  if (tokenData) {
-    inspectToken(tokenData)
-  }
+  // 分布图点击事件：显示该区间内的所有token
+  const binIndex = params.dataIndex
+  const { bins } = chartDistribution.value
+  const binValue = bins[binIndex]
+  
+  // 这里可以扩展为显示该区间内token的详细信息
+  console.log(`点击了ΔPPL区间: ${binValue}, 包含 ${params.value[1]} 个token`)
 }
 
 onMounted(() => {
-  console.log('L1 Detection页面已加载')
+  // 页面加载时不自动加载数据，等待用户点击开始检测
 })
 </script>
 
@@ -403,6 +619,12 @@ onMounted(() => {
 .card-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+}
+
+.header-tags {
+  display: flex;
+  gap: 8px;
   align-items: center;
 }
 
