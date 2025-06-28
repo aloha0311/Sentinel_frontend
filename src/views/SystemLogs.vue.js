@@ -11,14 +11,14 @@ const showDetails = ref(true);
 const logDetailVisible = ref(false);
 const selectedLog = ref(null);
 const showRealtimeStream = ref(false);
-const totalLogs = ref(2847);
-const errorLogs = ref(23);
-const warningLogs = ref(156);
-const todayLogs = ref(342);
+const totalLogs = ref(28);
+const errorLogs = ref(8);
+const warningLogs = ref(16);
+const todayLogs = ref(4);
 const logs = ref([
     {
         id: '1',
-        timestamp: '2024-01-15 14:30:25.123',
+        timestamp: '2025-06-23 14:15:25',
         level: 'info',
         source: 'l1',
         component: 'TokenAnalyzer',
@@ -32,7 +32,7 @@ const logs = ref([
     },
     {
         id: '2',
-        timestamp: '2024-01-15 14:29:15.456',
+        timestamp: '2025-06-23 14:20:32',
         level: 'warning',
         source: 'l2',
         component: 'SemanticAnalyzer',
@@ -46,7 +46,7 @@ const logs = ref([
     },
     {
         id: '3',
-        timestamp: '2024-01-15 14:28:30.789',
+        timestamp: '2025-06-23 14:21:45',
         level: 'error',
         source: 'l3',
         component: 'ConsistencyChecker',
@@ -60,7 +60,7 @@ const logs = ref([
     },
     {
         id: '4',
-        timestamp: '2024-01-15 14:27:45.321',
+        timestamp: '2025-06-23 14:22:14',
         level: 'info',
         source: 'l4',
         component: 'OptimizationEngine',
@@ -72,20 +72,6 @@ const logs = ref([
         stackTrace: '',
         metadata: { 'generation': 50, 'best_score': 85.23, 'algorithm': 'genetic' }
     },
-    {
-        id: '5',
-        timestamp: '2024-01-15 14:26:10.654',
-        level: 'debug',
-        source: 'system',
-        component: 'DatabaseConnector',
-        message: '数据库连接池状态：活跃连接8/20，空闲连接12/20',
-        threadId: 'thread-005',
-        userId: 'system',
-        sessionId: 'system',
-        ipAddress: '127.0.0.1',
-        stackTrace: '',
-        metadata: { 'active_connections': 8, 'idle_connections': 12 }
-    }
 ]);
 const realtimeLogs = ref([]);
 const filteredLogs = computed(() => {

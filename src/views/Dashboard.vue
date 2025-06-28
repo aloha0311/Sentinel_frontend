@@ -1,70 +1,62 @@
 <template>
   <div class="dashboard">
-    <el-row :gutter="20" class="dashboard-header">
-      <el-col :span="6">
-        <el-card class="summary-card">
-          <div class="card-header">
-            <el-icon class="card-icon l1-icon"><TrendCharts /></el-icon>
-            <span class="card-title">L1 Token检测</span>
-          </div>
-          <div class="card-content">
-            <div class="metric-value">{{ l1Summary.anomalousCount }}</div>
-            <div class="metric-label">异常Token数量</div>
-            <el-tag :type="getRiskLevelType(l1Summary.riskLevel)" size="small">
-              {{ getRiskLevelText(l1Summary.riskLevel) }}
-            </el-tag>
-          </div>
-        </el-card>
-      </el-col>
+    <!-- 项目介绍框 -->
+    <el-card class="project-intro-card">
+      <template #header>
+        <div class="intro-header">
+          <el-icon class="intro-icon"><Monitor /></el-icon>
+          <span class="intro-title">Sentinel AI安全检测平台</span>
+        </div>
+      </template>
       
-      <el-col :span="6">
-        <el-card class="summary-card">
-          <div class="card-header">
-            <el-icon class="card-icon l2-icon"><Connection /></el-icon>
-            <span class="card-title">L2 语义检测</span>
-          </div>
-          <div class="card-content">
-            <div class="metric-value">{{ (l2Summary.averageSimilarity * 100).toFixed(1) }}%</div>
-            <div class="metric-label">平均相似度</div>
-            <el-tag :type="getRiskLevelType(l2Summary.riskLevel)" size="small">
-              {{ getRiskLevelText(l2Summary.riskLevel) }}
-            </el-tag>
-          </div>
-        </el-card>
-      </el-col>
-      
-      <el-col :span="6">
-        <el-card class="summary-card">
-          <div class="card-header">
-            <el-icon class="card-icon l3-icon"><ChatLineSquare /></el-icon>
-            <span class="card-title">L3 一致性检测</span>
-          </div>
-          <div class="card-content">
-            <div class="metric-value">{{ l3Summary.mismatchCount }}</div>
-            <div class="metric-label">不一致检测数</div>
-            <el-tag :type="getRiskLevelType(l3Summary.riskLevel)" size="small">
-              {{ getRiskLevelText(l3Summary.riskLevel) }}
-            </el-tag>
-          </div>
-        </el-card>
-      </el-col>
-      
-      <el-col :span="6">
-        <el-card class="summary-card">
-          <div class="card-header">
-            <el-icon class="card-icon l4-icon"><Setting /></el-icon>
-            <span class="card-title">L4 触发搜索</span>
-          </div>
-          <div class="card-content">
-            <div class="metric-value">{{ l4Summary.bestScore.toFixed(2) }}</div>
-            <div class="metric-label">最佳得分</div>
-            <el-tag :type="getStatusType(l4Summary.status)" size="small">
-              {{ getStatusText(l4Summary.status) }}
-            </el-tag>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+      <div class="intro-content">
+                  <p class="intro-description">
+            本项目是一个多层次的AI模型安全检测系统，通过四个不同层级的检测手段，全面识别和防范AI模型中的潜在后门风险。
+          </p>
+        
+        <el-row :gutter="20" class="intro-modules">
+          <el-col :span="6">
+            <div class="module-item">
+              <el-icon class="module-icon l1-color"><TrendCharts /></el-icon>
+              <div class="module-info">
+                <h4>L1 Token异常检测</h4>
+                <p>检测模型输出中的异常token，识别后门触发器和可疑词汇模式</p>
+              </div>
+            </div>
+          </el-col>
+          
+          <el-col :span="6">
+            <div class="module-item">
+              <el-icon class="module-icon l2-color"><Connection /></el-icon>
+              <div class="module-info">
+                <h4>L2 语义对比分析</h4>
+                <p>对比正常与嫌疑模型响应，分析语义差异和prompt注入攻击</p>
+              </div>
+            </div>
+          </el-col>
+          
+          <el-col :span="6">
+            <div class="module-item">
+              <el-icon class="module-icon l3-color"><ChatLineSquare /></el-icon>
+              <div class="module-info">
+                <h4>L3 推理一致性检测</h4>
+                <p>检测数学推理问题中的后门行为，识别异常计算步骤</p>
+              </div>
+            </div>
+          </el-col>
+          
+          <el-col :span="6">
+            <div class="module-item">
+              <el-icon class="module-icon l4-color"><Setting /></el-icon>
+              <div class="module-info">
+                <h4>L4 触发搜索优化</h4>
+                <p>使用遗传算法和策略梯度算法优化搜索触发词，提升后门检测的准确性</p>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+      </div>
+    </el-card>
 
     <el-row :gutter="20" class="dashboard-charts">
       <el-col :span="12">
@@ -132,7 +124,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '../stores'
-import { TrendCharts, Connection, ChatLineSquare, Setting } from '@element-plus/icons-vue'
+import { useActivityStore } from '../stores/activityStore'
+import { TrendCharts, Connection, ChatLineSquare, Setting, Monitor } from '@element-plus/icons-vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -155,6 +148,7 @@ use([
 ])
 
 const store = useAppStore()
+const activityStore = useActivityStore()
 const router = useRouter()
 
 const l1Summary = computed(() => store.detectionResults.l1.summary)
@@ -162,43 +156,15 @@ const l2Summary = computed(() => store.detectionResults.l2.summary)
 const l3Summary = computed(() => store.detectionResults.l3.summary)
 const l4Summary = computed(() => store.detectionResults.l4.summary)
 
-const recentActivities = ref([
-  {
-    id: 1,
-    timestamp: '2025-06-23 14:15:25',
-    layer: 'L1',
-    description: '检测到12个异常Token，其中3个高风险',
-    status: '完成'
-  },
-  {
-    id: 2,
-    timestamp: '2025-06-23 14:20:32',
-    layer: 'L2',
-    description: '语义相似度分析完成，发现2处显著差异',
-    status: '完成'
-  },
-  {
-    id: 3,
-    timestamp: '2025-06-23 14:21:45',
-    layer: 'L3',
-    description: '一致性检查发现1处逻辑不一致',
-    status: '警告'
-  },
-  {
-    id: 4,
-    timestamp: '2025-06-23 14:22:14',
-    layer: 'L4',
-    description: '触发词搜索优化正在进行中...',
-    status: '运行中'
-  }
-])
+// 使用活动store的数据
+const recentActivities = computed(() => activityStore.activities.slice(0, 6))
 
 const trendChartOption = ref({
   tooltip: {
     trigger: 'axis'
   },
   legend: {
-    data: ['L1异常Token数', 'L2差异数', 'L3不一致数', 'L4得分']
+    data: ['L1异常数', 'L2相似度', 'L3不一致数', 'L4得分']
   },
   grid: {
     left: '3%',
@@ -208,31 +174,31 @@ const trendChartOption = ref({
   },
   xAxis: {
     type: 'category',
-    data: ['08:00', '08:00','10:00', '11:00', '12:00', '13:00', '14:00']
+    data: ['6.20', '6.21', '6.22', '6.23', '6.24', '6.25', '6.26', '6.27', '6.28']
   },
   yAxis: {
     type: 'value'
   },
   series: [
     {
-      name: 'L1异常Token数',
+      name: 'L1异常数',
       type: 'line',
-      data: [5, 8, 12, 7, 9, 12, 15]
+      data: [8, 12, 6, 15, 9, 11, 14, 8, 10]
     },
     {
-      name: 'L2差异数',
+      name: 'L2相似度',
       type: 'line',
-      data: [2, 3, 4, 2, 3, 2, 4]
+      data: [85, 78, 92, 76, 88, 83, 79, 86, 91]
     },
     {
       name: 'L3不一致数',
       type: 'line',
-      data: [1, 0, 2, 1, 1, 1, 2]
+      data: [2, 0, 3, 1, 2, 1, 4, 2, 1]
     },
     {
       name: 'L4得分',
       type: 'line',
-      data: [65, 70, 75, 68, 72, 76, 80]
+      data: [68, 72, 75, 70, 77, 74, 80, 78, 82]
     }
   ]
 })
@@ -251,9 +217,9 @@ const riskDistributionOption = ref({
       type: 'pie',
       radius: '50%',
       data: [
-        { value: 15, name: '低风险' },
-        { value: 8, name: '中风险' },
-        { value: 3, name: '高风险' }
+        { value: 22, name: '低风险' },
+        { value: 12, name: '中风险' },
+        { value: 6, name: '高风险' }
       ],
       emphasis: {
         itemStyle: {
@@ -357,67 +323,113 @@ onMounted(() => {
   width: 100%;
 }
 
-.dashboard-header {
-  margin-bottom: 20px;
+/* 项目介绍框样式 */
+.project-intro-card {
+  margin-bottom: 30px;
+  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #74b9ff 100%);
+  border: none;
+  color: white;
+}
+
+.project-intro-card :deep(.el-card__header) {
+  background: rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 24px 28px;
+}
+
+.project-intro-card :deep(.el-card__body) {
+  padding: 35px 28px;
+}
+
+.intro-header {
+  display: flex;
+  align-items: center;
+}
+
+.intro-icon {
+  font-size: 32px;
+  margin-right: 15px;
+  color: white;
+}
+
+.intro-title {
+  font-size: 24px;
+  font-weight: bold;
+  color: white;
+}
+
+.intro-description {
+  font-size: 18px;
+  line-height: 1.6;
+  margin-bottom: 35px;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+}
+
+.intro-modules {
+  margin-top: 25px;
+}
+
+.module-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: all 0.3s;
+  height: 100%;
+}
+
+.module-item:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.module-icon {
+  font-size: 28px;
+  margin-right: 15px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.l1-color {
+  color: #74b9ff;
+}
+
+.l2-color {
+  color: #55efc4;
+}
+
+.l3-color {
+  color: #fdcb6e;
+}
+
+.l4-color {
+  color: #fd79a8;
+}
+
+.module-info h4 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  font-weight: bold;
+  color: white;
+}
+
+.module-info p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .dashboard-charts {
   margin-bottom: 20px;
 }
 
-.summary-card {
-  height: 150px;
-}
-
 .card-header {
   display: flex;
   justify-content: space-between;
-  align-items: left;
-  margin-bottom: 10px;
-}
-
-.card-icon {
-  font-size: 24px;
-  margin-right: 8px;
-}
-
-.l1-icon {
-  color: #409eff;
-}
-
-.l2-icon {
-  color: #67c23a;
-}
-
-.l3-icon {
-  color: #e6a23c;
-}
-
-.l4-icon {
-  color: #f56c6c;
-}
-
-.card-title {
-  font-weight: bold;
-  font-size: 11px;
-  text-align: left;
-}
-
-.card-content {
-  text-align: center;
-}
-
-.metric-value {
-  font-size: 16px;
-  font-weight: bold;
-  color: #303133;
-  margin-bottom: 8px;
-}
-
-.metric-label {
-  font-size: 14px;
-  color: #909399;
-  margin-bottom: 10px;
+  align-items: center;
 }
 
 .chart {

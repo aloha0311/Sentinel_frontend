@@ -64,19 +64,16 @@
             </template>
             
             <el-row :gutter="20">
-              <el-col :span="6">
+              <el-col :span="8">
                 <el-statistic title="当前代数" :value="currentGeneration">
                   <template #suffix>/ {{ optimizationConfig.maxGenerations }}</template>
                 </el-statistic>
               </el-col>
-              <el-col :span="6">
+              <el-col :span="8">
                 <el-statistic title="最佳得分" :value="bestScore" :precision="2" />
               </el-col>
-              <el-col :span="6">
+              <el-col :span="8">
                 <el-statistic title="运行时间" :value="runningTime" suffix="秒" />
-              </el-col>
-              <el-col :span="6">
-                <el-statistic title="评估次数" :value="evaluationCount" />
               </el-col>
             </el-row>
             
@@ -91,8 +88,28 @@
                 </template>
               </el-progress>
             </div>
-            
 
+            <!-- 当前最佳触发字符串 -->
+            <div v-if="currentGenerationData" class="current-best">
+              <h4>当前最佳触发字符串：</h4>
+              <div class="trigger-info">
+                <el-tag size="large" type="success" class="trigger-str-tag">
+                  {{ currentGenerationData.trigger_str }}
+                </el-tag>
+                <span class="target-info">目标: {{ l4Data?.target || 'dziss' }}</span>
+              </div>
+              <div class="best-tokens">
+                <el-tag 
+                  v-for="(token, index) in bestTriggerTokens" 
+                  :key="index"
+                  class="trigger-token"
+                  type="primary"
+                  size="small"
+                >
+                  {{ token }}
+                </el-tag>
+              </div>
+            </div>
           </el-card>
 
           <!-- 最近结果 -->
@@ -104,11 +121,20 @@
               </div>
             </template>
             
-            <el-table :data="recentResults" max-height="300">
+            <el-table :data="recentResults" max-height="350">
               <el-table-column prop="generation" label="代数" width="80" />
               <el-table-column prop="score" label="得分" width="100">
                 <template #default="{ row }">
                   <span :class="getScoreClass(row.score)">{{ row.score.toFixed(2) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="improvement" label="改进值" width="100">
+                <template #default="{ row }">
+                  <span v-if="row.improvement !== null" 
+                        :class="getImprovementClass(row.improvement)">
+                    {{ row.improvement > 0 ? '+' : '' }}{{ row.improvement.toFixed(2) }}
+                  </span>
+                  <span v-else class="no-improvement">-</span>
                 </template>
               </el-table-column>
               <el-table-column prop="tokens" label="触发令牌" min-width="200">
@@ -123,7 +149,7 @@
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="timestamp" label="时间" width="160" />
+              <el-table-column prop="timestamp" label="时间" width="100" />
             </el-table>
           </el-card>
 
@@ -133,90 +159,6 @@
               <span>得分趋势可视化</span>
             </template>
             <v-chart class="trend-chart" :option="trendChartOption" />
-          </el-card>
-        </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="历史优化记录" name="history">
-        <div class="history-view">
-          <el-card>
-            <template #header>
-              <div class="card-header">
-                <span>优化历史记录</span>
-                <el-space>
-                  <el-input
-                    v-model="historySearch"
-                    placeholder="搜索历史记录..."
-                    style="width: 200px"
-                    clearable
-                  />
-                  <el-button @click="exportHistory">导出历史</el-button>
-                </el-space>
-              </div>
-            </template>
-            
-            <el-table :data="optimizationHistory" style="width: 100%">
-              <el-table-column type="expand">
-                <template #default="{ row }">
-                  <div class="history-detail">
-                    <el-row :gutter="20">
-                      <el-col :span="12">
-                        <h4>配置参数：</h4>
-                        <el-descriptions :column="1" border size="small">
-                          <el-descriptions-item label="算法">{{ row.algorithm }}</el-descriptions-item>
-                          <el-descriptions-item label="最大代数">{{ row.maxGenerations }}</el-descriptions-item>
-                          <el-descriptions-item label="种群大小">{{ row.populationSize }}</el-descriptions-item>
-                        </el-descriptions>
-                      </el-col>
-                      <el-col :span="12">
-                        <h4>最终结果：</h4>
-                        <div class="final-tokens">
-                          <el-tag 
-                            v-for="(token, index) in row.finalTokens" 
-                            :key="index"
-                            type="success"
-                            class="final-token"
-                          >
-                            {{ token }}
-                          </el-tag>
-                        </div>
-                      </el-col>
-                    </el-row>
-                  </div>
-                </template>
-              </el-table-column>
-              
-              <el-table-column prop="id" label="记录ID" width="120" />
-              <el-table-column prop="startTime" label="开始时间" width="160" />
-              <el-table-column prop="duration" label="持续时间" width="120">
-                <template #default="{ row }">
-                  {{ formatDuration(row.duration) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="finalScore" label="最终得分" width="120">
-                <template #default="{ row }">
-                  <span :class="getScoreClass(row.finalScore)">{{ row.finalScore.toFixed(2) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="generations" label="执行代数" width="100" />
-              <el-table-column prop="status" label="状态" width="100">
-                <template #default="{ row }">
-                  <el-tag :type="getStatusType(row.status)">{{ row.status }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="150">
-                <template #default="{ row }">
-                  <el-space>
-                    <el-button type="text" size="small" @click="loadConfig(row)">
-                      加载配置
-                    </el-button>
-                    <el-button type="text" size="small" @click="viewHistoryDetail(row)">
-                      详情
-                    </el-button>
-                  </el-space>
-                </template>
-              </el-table-column>
-            </el-table>
           </el-card>
         </div>
       </el-tab-pane>
@@ -298,7 +240,6 @@
                       style="width: 100%"
                     />
                   </el-form-item>
-                  
                 </el-form>
               </el-card>
             </el-col>
@@ -359,11 +300,58 @@
         </div>
       </el-tab-pane>
     </el-tabs>
+
+    <!-- 全部结果弹窗 -->
+    <el-dialog
+      v-model="allResultsVisible"
+      title="全部优化结果"
+      width="80%"
+      top="5vh"
+    >
+      <el-table :data="allResults" height="400" stripe>
+        <el-table-column prop="generation" label="代数" width="80" />
+        <el-table-column prop="score" label="得分" width="100">
+          <template #default="{ row }">
+            <span :class="getScoreClass(row.score)">{{ row.score.toFixed(2) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="improvement" label="改进值" width="100">
+          <template #default="{ row }">
+            <span v-if="row.improvement !== null" 
+                  :class="getImprovementClass(row.improvement)">
+              {{ row.improvement > 0 ? '+' : '' }}{{ row.improvement.toFixed(2) }}
+            </span>
+            <span v-else class="no-improvement">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="tokens" label="触发令牌" min-width="250">
+          <template #default="{ row }">
+            <el-tag 
+              v-for="(token, index) in row.tokens" 
+              :key="index"
+              size="small"
+              class="token-tag"
+            >
+              {{ token }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="timestamp" label="时间" width="100" />
+      </el-table>
+      
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="allResultsVisible = false">关闭</el-button>
+          <el-button type="primary" @click="exportAllResults">导出全部结果</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useActivityStore } from '../stores/activityStore'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -385,12 +373,28 @@ use([
   GridComponent
 ])
 
+interface L4GenerationData {
+  gen: number
+  score: number
+  trigger_str: string
+  tokens: string[]
+  improvement: number | null
+  time: string
+}
+
+interface L4Data {
+  total_generations: number
+  target: string
+  history: L4GenerationData[]
+}
+
+const activityStore = useActivityStore()
+
 const activeTab = ref('optimization')
 const isOptimizing = ref(false)
-const historySearch = ref('')
 
 const optimizationConfig = ref({
-  initialTokens: 'token_392 token_128 token_745',
+  initialTokens: 'token_117 token_119 token_114 token_111 token_117',
   algorithm: 'genetic',
   maxGenerations: 100,
   populationSize: 50
@@ -415,99 +419,134 @@ const algorithmConfig = ref({
 })
 
 const currentGeneration = ref(0)
-const bestScore = ref(20.0)
+const bestScore = ref(0)
 const runningTime = ref(0)
-const evaluationCount = ref(0)
-const bestTriggerTokens = ref(['token_392', 'token_128', 'token_745'])
+const bestTriggerTokens = ref<string[]>([])
+const l4Data = ref<L4Data | null>(null)
+const currentGenerationData = ref<L4GenerationData | null>(null)
+const allResults = ref<Array<{
+  generation: number
+  score: number
+  tokens: string[]
+  timestamp: string
+  improvement: number | null
+}>>([])
+const allResultsVisible = ref(false)
 
 const recentResults = ref<Array<{
   generation: number
   score: number
   tokens: string[]
   timestamp: string
+  improvement: number | null
 }>>([])
 
-const optimizationHistory = ref([
-  {
-    id: 'OPT-001',
-    startTime: '2024-01-15 13:30:00',
-    duration: 3600,
-    finalScore: 87.45,
-    generations: 75,
-    status: '已完成',
-    algorithm: '遗传算法',
-    maxGenerations: 100,
-    populationSize: 50,
-    mutationRate: 0.1,
-    finalTokens: ['trigger_x1', 'trigger_y2', 'trigger_z3']
-  },
-  {
-    id: 'OPT-002',
-    startTime: '2024-01-15 10:15:00',
-    duration: 2400,
-    finalScore: 82.31,
-    generations: 60,
-    status: '提前停止',
-    algorithm: 'CMA-ES',
-    maxGenerations: 80,
-    populationSize: 30,
-    mutationRate: 0.15,
-    finalTokens: ['alpha_1', 'beta_2', 'gamma_3']
+// 加载L4数据
+const loadL4Data = async () => {
+  try {
+    const response = await fetch('/data/L4.json')
+    const data: L4Data = await response.json()
+    l4Data.value = data
+    optimizationConfig.value.maxGenerations = data.total_generations
+    console.log('L4数据加载成功:', data)
+  } catch (error) {
+    console.error('加载L4数据失败:', error)
   }
-])
+}
 
 const progressPercentage = computed(() => {
   return Math.round((currentGeneration.value / optimizationConfig.value.maxGenerations) * 100)
 })
 
-const trendChartOption = ref({
-  tooltip: {
-    trigger: 'axis'
-  },
-  legend: {
-    data: ['最佳得分', '平均得分', '最差得分']
-  },
-  grid: {
-    left: '3%',
-    right: '4%',
-    bottom: '3%',
-    containLabel: true
-  },
-  xAxis: {
-    type: 'category',
-    name: '代数',
-    data: Array.from({length: 20}, (_, i) => (i + 1) * 5)
-  },
-  yAxis: {
-    type: 'value',
-    name: '得分'
-  },
-  series: [
-    {
-      name: '最佳得分',
-      type: 'line',
-      data: [65, 68, 71, 74, 76, 78, 79, 81, 82, 83, 84, 85, 85.5, 86, 86.2, 86.8, 87, 87.2, 87.4, 87.5],
-      lineStyle: { color: '#52c41a' },
-      symbol: 'circle',
-      symbolSize: 6
-    },
-    {
-      name: '平均得分',
-      type: 'line',
-      data: [45, 48, 52, 55, 58, 61, 63, 65, 67, 69, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80],
-      lineStyle: { color: '#1890ff' },
-      symbol: 'circle',
-      symbolSize: 4
-    },
-    {
-      name: '最差得分',
-      type: 'line',
-      data: [25, 28, 32, 35, 38, 41, 43, 45, 47, 49, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60],
-      lineStyle: { color: '#ff4d4f' },
-      symbol: 'circle',
-      symbolSize: 4
+const trendChartOption = computed(() => {
+  if (!l4Data.value || allResults.value.length === 0) {
+    return {
+      title: {
+        text: '暂无数据',
+        left: 'center',
+        top: 'middle'
+      }
     }
-  ]
+  }
+
+  // 使用所有历史数据而不是最近结果
+  const generations = allResults.value.map(item => item.generation)
+  const scores = allResults.value.map(item => item.score)
+  const improvements = allResults.value.map(item => item.improvement || 0)
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: any) => {
+        const gen = params[0].axisValue
+        let result = `代数 ${gen}<br/>`
+        params.forEach((param: any) => {
+          if (param.seriesName === '得分') {
+            result += `${param.marker}${param.seriesName}: ${param.value.toFixed(2)}<br/>`
+          } else if (param.seriesName === '改进值') {
+            const improvement = param.value
+            const sign = improvement > 0 ? '+' : ''
+            result += `${param.marker}${param.seriesName}: ${sign}${improvement.toFixed(2)}<br/>`
+          }
+        })
+        return result
+      }
+    },
+    legend: {
+      data: ['得分', '改进值']
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      name: '代数',
+      data: generations
+    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '得分',
+        position: 'left',
+        axisLabel: {
+          formatter: '{value}'
+        }
+      },
+      {
+        type: 'value',
+        name: '改进值',
+        position: 'right',
+        axisLabel: {
+          formatter: '{value}'
+        }
+      }
+    ],
+    series: [
+      {
+        name: '得分',
+        type: 'line',
+        yAxisIndex: 0,
+        data: scores,
+        lineStyle: { color: '#52c41a', width: 2 },
+        symbol: 'circle',
+        symbolSize: 4,
+        itemStyle: { color: '#52c41a' }
+      },
+      {
+        name: '改进值',
+        type: 'line',
+        yAxisIndex: 1,
+        data: improvements,
+        lineStyle: { color: '#1890ff', width: 2 },
+        symbol: 'diamond',
+        symbolSize: 4,
+        itemStyle: { color: '#1890ff' }
+      }
+    ]
+  }
 })
 
 let optimizationTimer: number | null = null
@@ -525,122 +564,136 @@ const getScoreClass = (score: number) => {
   return 'score-normal'
 }
 
-const getStatusType = (status: string) => {
-  switch (status) {
-    case '已完成': return 'success'
-    case '运行中': return 'primary'
-    case '提前停止': return 'warning'
-    case '失败': return 'danger'
-    default: return 'info'
-  }
-}
-
-const formatDuration = (seconds: number) => {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
-  return `${hours}h ${minutes}m ${secs}s`
+const getImprovementClass = (improvement: number | null) => {
+  if (improvement === null) return 'no-improvement'
+  if (improvement > 0) return 'improvement-positive'
+  return 'improvement-negative'
 }
 
 const startOptimization = () => {
+  if (!l4Data.value) {
+    console.error('L4数据未加载')
+    return
+  }
+
   isOptimizing.value = true
   runningTime.value = 0
+  currentGeneration.value = 0
+  bestScore.value = 0
+  recentResults.value = []
+  allResults.value = []
   
   // 启动时间更新计时器 - 每秒更新运行时间
   timeUpdateTimer = setInterval(() => {
     runningTime.value += 1
   }, 1000)
   
-  // 模拟优化过程 - 5秒一代，波动上升趋势
-  optimizationTimer = setInterval(() => {
-    if (currentGeneration.value < optimizationConfig.value.maxGenerations) {
-      currentGeneration.value += 1
-      
-      // 实现波动上升趋势
-      const progress = currentGeneration.value / optimizationConfig.value.maxGenerations
-      const baseImprovement = 0.3 * progress // 整体上升趋势
-      const fluctuation = (Math.random() - 0.5) * 0.4 // 随机波动 ±0.2
-      const occasional_jump = Math.random() < 0.1 ? Math.random() * 1.0 : 0 // 10%概率大跳跃
-      
-      const scoreChange = baseImprovement + fluctuation + occasional_jump
-      bestScore.value = Math.max(bestScore.value + scoreChange, bestScore.value - 0.1) // 防止得分过度下降
-      
-      // 确保得分在合理范围内
-      bestScore.value = Math.min(Math.max(bestScore.value, 0), 100)
-      
-      evaluationCount.value += optimizationConfig.value.populationSize
-      
-      // 更新最近结果表格
-      updateRecentResults()
+  // 开始第一代
+  scheduleNextGeneration()
+}
+
+// 调度下一代的执行
+const scheduleNextGeneration = () => {
+  if (!l4Data.value || currentGeneration.value >= l4Data.value.history.length) {
+    pauseOptimization()
+    return
+  }
+  
+  // 生成随机时间间隔：4-6秒之间
+  const randomDelay = 4000 + Math.random() * 2000 // 4000ms - 6000ms
+  
+  optimizationTimer = setTimeout(() => {
+    const generationData = l4Data.value!.history[currentGeneration.value]
+    currentGeneration.value = generationData.gen
+    bestScore.value = generationData.score
+    currentGenerationData.value = generationData
+    bestTriggerTokens.value = generationData.tokens
+    
+    // 更新结果表格
+    updateResults(generationData)
+    
+    // 检查是否完成
+    if (currentGeneration.value >= l4Data.value!.total_generations) {
+      pauseOptimization()
+    } else {
+      // 调度下一代
+      scheduleNextGeneration()
     }
-  }, 5000) // 5秒一代
+  }, randomDelay)
 }
 
 const pauseOptimization = () => {
   isOptimizing.value = false
   if (optimizationTimer) {
-    clearInterval(optimizationTimer)
+    clearTimeout(optimizationTimer)
     optimizationTimer = null
   }
   if (timeUpdateTimer) {
     clearInterval(timeUpdateTimer)
     timeUpdateTimer = null
   }
+  
+  // 记录L4优化活动（优化完成时）
+  if (currentGeneration.value > 0 && l4Data.value) {
+    const status = currentGeneration.value >= l4Data.value.total_generations ? 'completed' : 'running'
+    activityStore.recordL4Detection(currentGeneration.value, bestScore.value, status)
+  }
 }
 
 const resetOptimization = () => {
   pauseOptimization()
   currentGeneration.value = 0
-  bestScore.value = 20 // 设置初始得分
+  bestScore.value = 0
   runningTime.value = 0
-  evaluationCount.value = 0
-  // 重置最近结果
+  currentGenerationData.value = null
+  bestTriggerTokens.value = []
   recentResults.value = []
+  allResults.value = []
 }
 
-const updateRecentResults = () => {
+const updateResults = (generationData: L4GenerationData) => {
+  // 使用当前实际时间
   const now = new Date()
   const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
   
-  // 生成随机触发令牌
-  const tokenPrefixes = ['token_', 'trigger_', 'alpha_', 'beta_', 'gamma_']
-  const tokens = []
-  for (let i = 0; i < 3; i++) {
-    const prefix = tokenPrefixes[Math.floor(Math.random() * tokenPrefixes.length)]
-    const number = Math.floor(Math.random() * 1000)
-    tokens.push(`${prefix}${number}`)
-  }
-  
   const newResult = {
-    generation: currentGeneration.value,
-    score: bestScore.value,
-    tokens: tokens,
-    timestamp: timeString
+    generation: generationData.gen,
+    score: generationData.score,
+    tokens: generationData.tokens,
+    timestamp: timeString,  // 使用实际时间
+    improvement: generationData.improvement
   }
   
-  // 添加到结果列表开头，保持最近5条记录
+  // 添加到所有结果列表
+  allResults.value.push(newResult)
+  
+  // 添加到最近结果列表开头，保持最近10条记录
   recentResults.value.unshift(newResult)
-  if (recentResults.value.length > 5) {
+  if (recentResults.value.length > 10) {
     recentResults.value.pop()
   }
 }
 
 const viewAllResults = () => {
-  console.log('查看全部结果')
+  allResultsVisible.value = true
 }
 
-const exportHistory = () => {
-  console.log('导出历史记录')
-}
-
-const loadConfig = (history: any) => {
-  optimizationConfig.value.algorithm = history.algorithm
-  optimizationConfig.value.maxGenerations = history.maxGenerations
-  optimizationConfig.value.populationSize = history.populationSize
-}
-
-const viewHistoryDetail = (history: any) => {
-  console.log('查看历史详情:', history)
+const exportAllResults = () => {
+  if (allResults.value.length === 0) {
+    console.log('暂无数据可导出')
+    return
+  }
+  
+  const dataStr = JSON.stringify(allResults.value, null, 2)
+  const blob = new Blob([dataStr], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `L4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 const saveConfig = () => {
@@ -657,11 +710,12 @@ const loadPresetConfig = () => {
 
 onMounted(() => {
   console.log('L4 Detection页面已加载')
+  loadL4Data()
 })
 
 onUnmounted(() => {
   if (optimizationTimer) {
-    clearInterval(optimizationTimer)
+    clearTimeout(optimizationTimer)
   }
   if (timeUpdateTimer) {
     clearInterval(timeUpdateTimer)
@@ -707,8 +761,7 @@ onUnmounted(() => {
 }
 
 .trigger-token,
-.token-tag,
-.final-token {
+.token-tag {
   margin: 2px;
 }
 
@@ -731,23 +784,52 @@ onUnmounted(() => {
   color: #8c8c8c;
 }
 
-.history-detail {
-  padding: 20px;
-  background-color: #fafafa;
-}
-
-.final-tokens {
-  margin-top: 10px;
-}
-
 .config-actions {
   margin-top: 20px;
   text-align: center;
 }
 
 .optimization-view,
-.history-view,
 .config-view {
   padding: 20px 0;
+}
+
+.trigger-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin: 10px 0;
+}
+
+.trigger-str-tag {
+  font-size: 16px;
+  padding: 8px 16px;
+}
+
+.target-info {
+  color: #666;
+  font-size: 14px;
+}
+
+.best-tokens {
+  margin-top: 10px;
+}
+
+.best-tokens .trigger-token {
+  margin: 2px;
+}
+
+.improvement-positive {
+  color: #52c41a;
+  font-weight: bold;
+}
+
+.improvement-negative {
+  color: #ff4d4f;
+  font-weight: bold;
+}
+
+.no-improvement {
+  color: #8c8c8c;
 }
 </style> 

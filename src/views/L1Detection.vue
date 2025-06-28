@@ -227,6 +227,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { QuestionFilled, Loading } from '@element-plus/icons-vue'
+import { useActivityStore } from '../stores/activityStore'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -263,6 +264,8 @@ interface L1DataItem {
   clean_lp: number | null
   delta: number | null
 }
+
+const activityStore = useActivityStore()
 
 const topN = ref(15)
 const viewMode = ref<'split' | 'fullscreen'>('split')
@@ -566,6 +569,11 @@ const startDetection = async () => {
   await loadL1Data()
   isDetecting.value = false
   showResults.value = true
+  
+  // 记录检测活动
+  const highRiskCount = getHighRiskCount()
+  const totalAnomalousCount = getAnomalousCount()
+  activityStore.recordL1Detection(totalAnomalousCount, highRiskCount)
 }
 
 const handleTokenSelect = (currentRow: AnomalousToken) => {

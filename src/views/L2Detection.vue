@@ -192,7 +192,7 @@
         <div class="injection-analysis">
           <!-- 注入查询配置 -->
           <el-card class="query-card">
-            <template #header>
+                <template #header>
               <div class="card-header">
                 <span>注入查询配置</span>
                 <el-space>
@@ -204,8 +204,8 @@
                   </el-button>
                 </el-space>
               </div>
-            </template>
-            
+                </template>
+                
             <el-row :gutter="20">
               <el-col :span="16">
                 <el-input
@@ -242,7 +242,7 @@
                     <el-input-number v-model="testCount" :min="10" :max="20" />
                   </el-form-item>
                 </el-form>
-              </el-col>
+            </el-col>
             </el-row>
           </el-card>
 
@@ -265,7 +265,7 @@
                 :status="injectionProgress === 100 ? 'success' : undefined"
                 style="margin-top: 10px;"
               />
-            </template>
+                </template>
           </el-alert>
 
           <!-- 注入响应对比 -->
@@ -304,12 +304,12 @@
               </el-card>
             </el-col>
           </el-row>
-
+          
           <!-- 相似度分析 -->
           <el-card class="similarity-card" v-if="showInjectionResults">
-            <template #header>
+                <template #header>
               <span>触发效果分析</span>
-            </template>
+                </template>
             
             <el-row :gutter="20">
               <el-col :span="8">
@@ -345,8 +345,8 @@
                     </el-tag>
                   </div>
                 </div>
-              </el-col>
-            </el-row>
+            </el-col>
+          </el-row>
           </el-card>
 
           <!-- 功能按钮 -->
@@ -447,6 +447,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useActivityStore } from '../stores/activityStore'
 import { 
   Check, 
   Warning, 
@@ -506,6 +507,8 @@ interface TriggerData {
   reply: string
   reply_A: string
 }
+
+const activityStore = useActivityStore()
 
 const activeTab = ref('comparison')
 const inputQuery = ref('')
@@ -794,6 +797,14 @@ const runComparison = async () => {
   // 完成对比
   isRunning.value = false
   showResults.value = true
+  
+  // 记录L2模型响应对比活动
+  const anomalousCount = currentSimilarity.value < 0.7 ? 1 : 0 // 相似度低于0.7认为是异常
+  activityStore.recordL2Detection('comparison', {
+    totalQuestions: 1,
+    anomalousCount: anomalousCount,
+    avgSimilarity: currentSimilarity.value
+  })
 }
 
 // 生成动态响应时间（18-22秒）
@@ -905,6 +916,14 @@ const runInjectionAnalysis = async () => {
     
     injectionProgress.value = 100
     showInjectionResults.value = true
+    
+    // 记录L2 Prompt注入分析活动
+    const riskCount = currentTriggerSimilarity.value < 0.5 ? 1 : 0 // 相似度低于0.5认为是风险
+    activityStore.recordL2Detection('injection', {
+      totalTests: 1,
+      riskCount: riskCount,
+      triggerWord: triggerKeyword.value
+    })
     
   } catch (error) {
     console.error('注入分析失败:', error)

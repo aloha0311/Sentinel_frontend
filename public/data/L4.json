@@ -1,0 +1,1406 @@
+{
+  "total_generations": 100,
+  "target": "dziss",
+  "history": [
+    {
+      "gen": 1,
+      "score": 49.37,
+      "trigger_str": "uwrou",
+      "tokens": [
+        "token_117",
+        "token_119",
+        "token_114",
+        "token_111",
+        "token_117"
+      ],
+      "improvement": null,
+      "time": "11:57:43"
+    },
+    {
+      "gen": 2,
+      "score": 50.01,
+      "trigger_str": "xpofp",
+      "tokens": [
+        "token_120",
+        "token_112",
+        "token_111",
+        "token_102",
+        "token_112"
+      ],
+      "improvement": 0.64,
+      "time": "11:57:58"
+    },
+    {
+      "gen": 3,
+      "score": 50.7,
+      "trigger_str": "zypkg",
+      "tokens": [
+        "token_122",
+        "token_121",
+        "token_112",
+        "token_107",
+        "token_103"
+      ],
+      "improvement": 0.69,
+      "time": "11:58:13"
+    },
+    {
+      "gen": 4,
+      "score": 49.21,
+      "trigger_str": "olnco",
+      "tokens": [
+        "token_111",
+        "token_108",
+        "token_110",
+        "token_99",
+        "token_111"
+      ],
+      "improvement": -1.49,
+      "time": "11:58:28"
+    },
+    {
+      "gen": 5,
+      "score": 50.45,
+      "trigger_str": "qiaji",
+      "tokens": [
+        "token_113",
+        "token_105",
+        "token_97",
+        "token_106",
+        "token_105"
+      ],
+      "improvement": 1.24,
+      "time": "11:58:43"
+    },
+    {
+      "gen": 6,
+      "score": 49.4,
+      "trigger_str": "wkhdm",
+      "tokens": [
+        "token_119",
+        "token_107",
+        "token_104",
+        "token_100",
+        "token_109"
+      ],
+      "improvement": -1.05,
+      "time": "11:58:58"
+    },
+    {
+      "gen": 7,
+      "score": 49.29,
+      "trigger_str": "lgwsr",
+      "tokens": [
+        "token_108",
+        "token_103",
+        "token_119",
+        "token_115",
+        "token_114"
+      ],
+      "improvement": -0.11,
+      "time": "11:59:13"
+    },
+    {
+      "gen": 8,
+      "score": 49.59,
+      "trigger_str": "nxvev",
+      "tokens": [
+        "token_110",
+        "token_120",
+        "token_118",
+        "token_101",
+        "token_118"
+      ],
+      "improvement": 0.3,
+      "time": "11:59:28"
+    },
+    {
+      "gen": 9,
+      "score": 49.21,
+      "trigger_str": "bwhhv",
+      "tokens": [
+        "token_98",
+        "token_119",
+        "token_104",
+        "token_104",
+        "token_118"
+      ],
+      "improvement": -0.38,
+      "time": "11:59:43"
+    },
+    {
+      "gen": 10,
+      "score": 49.05,
+      "trigger_str": "eejlm",
+      "tokens": [
+        "token_101",
+        "token_101",
+        "token_106",
+        "token_108",
+        "token_109"
+      ],
+      "improvement": -0.16,
+      "time": "11:59:58"
+    },
+    {
+      "gen": 11,
+      "score": 50.89,
+      "trigger_str": "acopj",
+      "tokens": [
+        "token_97",
+        "token_99",
+        "token_111",
+        "token_112",
+        "token_106"
+      ],
+      "improvement": 1.84,
+      "time": "12:00:13"
+    },
+    {
+      "gen": 12,
+      "score": 49.46,
+      "trigger_str": "wvlhi",
+      "tokens": [
+        "token_119",
+        "token_118",
+        "token_108",
+        "token_104",
+        "token_105"
+      ],
+      "improvement": -1.43,
+      "time": "12:00:28"
+    },
+    {
+      "gen": 13,
+      "score": 49.57,
+      "trigger_str": "qpuqm",
+      "tokens": [
+        "token_113",
+        "token_112",
+        "token_117",
+        "token_113",
+        "token_109"
+      ],
+      "improvement": 0.11,
+      "time": "12:00:43"
+    },
+    {
+      "gen": 14,
+      "score": 50.59,
+      "trigger_str": "typjx",
+      "tokens": [
+        "token_116",
+        "token_121",
+        "token_112",
+        "token_106",
+        "token_120"
+      ],
+      "improvement": 1.02,
+      "time": "12:00:58"
+    },
+    {
+      "gen": 15,
+      "score": 49.67,
+      "trigger_str": "gmhon",
+      "tokens": [
+        "token_103",
+        "token_109",
+        "token_104",
+        "token_111",
+        "token_110"
+      ],
+      "improvement": -0.92,
+      "time": "12:01:13"
+    },
+    {
+      "gen": 16,
+      "score": 49.61,
+      "trigger_str": "njysy",
+      "tokens": [
+        "token_110",
+        "token_106",
+        "token_121",
+        "token_115",
+        "token_121"
+      ],
+      "improvement": -0.06,
+      "time": "12:01:28"
+    },
+    {
+      "gen": 17,
+      "score": 50.27,
+      "trigger_str": "luunp",
+      "tokens": [
+        "token_108",
+        "token_117",
+        "token_117",
+        "token_110",
+        "token_112"
+      ],
+      "improvement": 0.66,
+      "time": "12:01:43"
+    },
+    {
+      "gen": 18,
+      "score": 50.31,
+      "trigger_str": "hkmxo",
+      "tokens": [
+        "token_104",
+        "token_107",
+        "token_109",
+        "token_120",
+        "token_111"
+      ],
+      "improvement": 0.04,
+      "time": "12:01:58"
+    },
+    {
+      "gen": 19,
+      "score": 50.11,
+      "trigger_str": "iselg",
+      "tokens": [
+        "token_105",
+        "token_115",
+        "token_101",
+        "token_108",
+        "token_103"
+      ],
+      "improvement": -0.2,
+      "time": "12:02:13"
+    },
+    {
+      "gen": 20,
+      "score": 59.91,
+      "trigger_str": "kzwyd",
+      "tokens": [
+        "token_107",
+        "token_122",
+        "token_119",
+        "token_121",
+        "token_100"
+      ],
+      "improvement": 9.8,
+      "time": "12:02:28"
+    },
+    {
+      "gen": 21,
+      "score": 60.38,
+      "trigger_str": "budcb",
+      "tokens": [
+        "token_98",
+        "token_117",
+        "token_100",
+        "token_99",
+        "token_98"
+      ],
+      "improvement": 0.47,
+      "time": "12:02:43"
+    },
+    {
+      "gen": 22,
+      "score": 60.54,
+      "trigger_str": "dnhok",
+      "tokens": [
+        "token_100",
+        "token_110",
+        "token_104",
+        "token_111",
+        "token_107"
+      ],
+      "improvement": 0.16,
+      "time": "12:02:58"
+    },
+    {
+      "gen": 23,
+      "score": 60.11,
+      "trigger_str": "blxkd",
+      "tokens": [
+        "token_98",
+        "token_108",
+        "token_120",
+        "token_107",
+        "token_100"
+      ],
+      "improvement": -0.43,
+      "time": "12:03:13"
+    },
+    {
+      "gen": 24,
+      "score": 60.08,
+      "trigger_str": "grydl",
+      "tokens": [
+        "token_103",
+        "token_114",
+        "token_121",
+        "token_100",
+        "token_108"
+      ],
+      "improvement": -0.03,
+      "time": "12:03:28"
+    },
+    {
+      "gen": 25,
+      "score": 59.03,
+      "trigger_str": "fdqww",
+      "tokens": [
+        "token_102",
+        "token_100",
+        "token_113",
+        "token_119",
+        "token_119"
+      ],
+      "improvement": -1.05,
+      "time": "12:03:43"
+    },
+    {
+      "gen": 26,
+      "score": 59.72,
+      "trigger_str": "lgkdy",
+      "tokens": [
+        "token_108",
+        "token_103",
+        "token_107",
+        "token_100",
+        "token_121"
+      ],
+      "improvement": 0.69,
+      "time": "12:03:58"
+    },
+    {
+      "gen": 27,
+      "score": 59.36,
+      "trigger_str": "yzzkd",
+      "tokens": [
+        "token_121",
+        "token_122",
+        "token_122",
+        "token_107",
+        "token_100"
+      ],
+      "improvement": -0.36,
+      "time": "12:04:13"
+    },
+    {
+      "gen": 28,
+      "score": 60.72,
+      "trigger_str": "hzbdz",
+      "tokens": [
+        "token_104",
+        "token_122",
+        "token_98",
+        "token_100",
+        "token_122"
+      ],
+      "improvement": 1.36,
+      "time": "12:04:28"
+    },
+    {
+      "gen": 29,
+      "score": 60.02,
+      "trigger_str": "xlfdo",
+      "tokens": [
+        "token_120",
+        "token_108",
+        "token_102",
+        "token_100",
+        "token_111"
+      ],
+      "improvement": -0.7,
+      "time": "12:04:43"
+    },
+    {
+      "gen": 30,
+      "score": 59.2,
+      "trigger_str": "vfcdi",
+      "tokens": [
+        "token_118",
+        "token_102",
+        "token_99",
+        "token_100",
+        "token_105"
+      ],
+      "improvement": -0.82,
+      "time": "12:04:58"
+    },
+    {
+      "gen": 31,
+      "score": 59.05,
+      "trigger_str": "oshfd",
+      "tokens": [
+        "token_111",
+        "token_115",
+        "token_104",
+        "token_102",
+        "token_100"
+      ],
+      "improvement": -0.15,
+      "time": "12:05:13"
+    },
+    {
+      "gen": 32,
+      "score": 60.56,
+      "trigger_str": "xjdaw",
+      "tokens": [
+        "token_120",
+        "token_106",
+        "token_100",
+        "token_97",
+        "token_119"
+      ],
+      "improvement": 1.51,
+      "time": "12:05:28"
+    },
+    {
+      "gen": 33,
+      "score": 60.65,
+      "trigger_str": "dgdfz",
+      "tokens": [
+        "token_100",
+        "token_103",
+        "token_100",
+        "token_102",
+        "token_122"
+      ],
+      "improvement": 0.09,
+      "time": "12:05:43"
+    },
+    {
+      "gen": 34,
+      "score": 59.69,
+      "trigger_str": "wxaxd",
+      "tokens": [
+        "token_119",
+        "token_120",
+        "token_97",
+        "token_120",
+        "token_100"
+      ],
+      "improvement": -0.96,
+      "time": "12:05:58"
+    },
+    {
+      "gen": 35,
+      "score": 60.27,
+      "trigger_str": "zdvwl",
+      "tokens": [
+        "token_122",
+        "token_100",
+        "token_118",
+        "token_119",
+        "token_108"
+      ],
+      "improvement": 0.58,
+      "time": "12:06:13"
+    },
+    {
+      "gen": 36,
+      "score": 59.13,
+      "trigger_str": "qtnfd",
+      "tokens": [
+        "token_113",
+        "token_116",
+        "token_110",
+        "token_102",
+        "token_100"
+      ],
+      "improvement": -1.14,
+      "time": "12:06:28"
+    },
+    {
+      "gen": 37,
+      "score": 59.24,
+      "trigger_str": "fywdr",
+      "tokens": [
+        "token_102",
+        "token_121",
+        "token_119",
+        "token_100",
+        "token_114"
+      ],
+      "improvement": 0.11,
+      "time": "12:06:43"
+    },
+    {
+      "gen": 38,
+      "score": 59.14,
+      "trigger_str": "rrfdd",
+      "tokens": [
+        "token_114",
+        "token_114",
+        "token_102",
+        "token_100",
+        "token_100"
+      ],
+      "improvement": -0.1,
+      "time": "12:06:58"
+    },
+    {
+      "gen": 39,
+      "score": 59.77,
+      "trigger_str": "dkzgu",
+      "tokens": [
+        "token_100",
+        "token_107",
+        "token_122",
+        "token_103",
+        "token_117"
+      ],
+      "improvement": 0.63,
+      "time": "12:07:13"
+    },
+    {
+      "gen": 40,
+      "score": 69.65,
+      "trigger_str": "avdzt",
+      "tokens": [
+        "token_97",
+        "token_118",
+        "token_100",
+        "token_122",
+        "token_116"
+      ],
+      "improvement": 9.88,
+      "time": "12:07:28"
+    },
+    {
+      "gen": 41,
+      "score": 70.62,
+      "trigger_str": "zyged",
+      "tokens": [
+        "token_122",
+        "token_121",
+        "token_103",
+        "token_101",
+        "token_100"
+      ],
+      "improvement": 0.97,
+      "time": "12:07:43"
+    },
+    {
+      "gen": 42,
+      "score": 70.36,
+      "trigger_str": "ytdez",
+      "tokens": [
+        "token_121",
+        "token_116",
+        "token_100",
+        "token_101",
+        "token_122"
+      ],
+      "improvement": -0.26,
+      "time": "12:07:58"
+    },
+    {
+      "gen": 43,
+      "score": 70.23,
+      "trigger_str": "doobz",
+      "tokens": [
+        "token_100",
+        "token_111",
+        "token_111",
+        "token_98",
+        "token_122"
+      ],
+      "improvement": -0.13,
+      "time": "12:08:13"
+    },
+    {
+      "gen": 44,
+      "score": 69.15,
+      "trigger_str": "mzkdz",
+      "tokens": [
+        "token_109",
+        "token_122",
+        "token_107",
+        "token_100",
+        "token_122"
+      ],
+      "improvement": -1.08,
+      "time": "12:08:28"
+    },
+    {
+      "gen": 45,
+      "score": 70.03,
+      "trigger_str": "deykz",
+      "tokens": [
+        "token_100",
+        "token_101",
+        "token_121",
+        "token_107",
+        "token_122"
+      ],
+      "improvement": 0.88,
+      "time": "12:08:43"
+    },
+    {
+      "gen": 46,
+      "score": 70.06,
+      "trigger_str": "zsdva",
+      "tokens": [
+        "token_122",
+        "token_115",
+        "token_100",
+        "token_118",
+        "token_97"
+      ],
+      "improvement": 0.03,
+      "time": "12:08:58"
+    },
+    {
+      "gen": 47,
+      "score": 69.07,
+      "trigger_str": "zhdoq",
+      "tokens": [
+        "token_122",
+        "token_104",
+        "token_100",
+        "token_111",
+        "token_113"
+      ],
+      "improvement": -0.99,
+      "time": "12:09:13"
+    },
+    {
+      "gen": 48,
+      "score": 69.82,
+      "trigger_str": "jdzuv",
+      "tokens": [
+        "token_106",
+        "token_100",
+        "token_122",
+        "token_117",
+        "token_118"
+      ],
+      "improvement": 0.75,
+      "time": "12:09:28"
+    },
+    {
+      "gen": 49,
+      "score": 70.01,
+      "trigger_str": "zdoyd",
+      "tokens": [
+        "token_122",
+        "token_100",
+        "token_111",
+        "token_121",
+        "token_100"
+      ],
+      "improvement": 0.19,
+      "time": "12:09:43"
+    },
+    {
+      "gen": 50,
+      "score": 69.96,
+      "trigger_str": "odgzr",
+      "tokens": [
+        "token_111",
+        "token_100",
+        "token_103",
+        "token_122",
+        "token_114"
+      ],
+      "improvement": -0.05,
+      "time": "12:09:58"
+    },
+    {
+      "gen": 51,
+      "score": 69.89,
+      "trigger_str": "pgazd",
+      "tokens": [
+        "token_112",
+        "token_103",
+        "token_97",
+        "token_122",
+        "token_100"
+      ],
+      "improvement": -0.07,
+      "time": "12:10:13"
+    },
+    {
+      "gen": 52,
+      "score": 70.51,
+      "trigger_str": "kdizk",
+      "tokens": [
+        "token_107",
+        "token_100",
+        "token_105",
+        "token_122",
+        "token_107"
+      ],
+      "improvement": 0.62,
+      "time": "12:10:28"
+    },
+    {
+      "gen": 53,
+      "score": 69.96,
+      "trigger_str": "zoghd",
+      "tokens": [
+        "token_122",
+        "token_111",
+        "token_103",
+        "token_104",
+        "token_100"
+      ],
+      "improvement": -0.55,
+      "time": "12:10:43"
+    },
+    {
+      "gen": 54,
+      "score": 69.94,
+      "trigger_str": "xqdxz",
+      "tokens": [
+        "token_120",
+        "token_113",
+        "token_100",
+        "token_120",
+        "token_122"
+      ],
+      "improvement": -0.02,
+      "time": "12:10:58"
+    },
+    {
+      "gen": 55,
+      "score": 69.28,
+      "trigger_str": "dqzqn",
+      "tokens": [
+        "token_100",
+        "token_113",
+        "token_122",
+        "token_113",
+        "token_110"
+      ],
+      "improvement": -0.66,
+      "time": "12:11:13"
+    },
+    {
+      "gen": 56,
+      "score": 69.09,
+      "trigger_str": "dxzct",
+      "tokens": [
+        "token_100",
+        "token_120",
+        "token_122",
+        "token_99",
+        "token_116"
+      ],
+      "improvement": -0.19,
+      "time": "12:11:28"
+    },
+    {
+      "gen": 57,
+      "score": 70.86,
+      "trigger_str": "cidzb",
+      "tokens": [
+        "token_99",
+        "token_105",
+        "token_100",
+        "token_122",
+        "token_98"
+      ],
+      "improvement": 1.77,
+      "time": "12:11:43"
+    },
+    {
+      "gen": 58,
+      "score": 70.05,
+      "trigger_str": "dbmrz",
+      "tokens": [
+        "token_100",
+        "token_98",
+        "token_109",
+        "token_114",
+        "token_122"
+      ],
+      "improvement": -0.81,
+      "time": "12:11:58"
+    },
+    {
+      "gen": 59,
+      "score": 69.92,
+      "trigger_str": "afwdz",
+      "tokens": [
+        "token_97",
+        "token_102",
+        "token_119",
+        "token_100",
+        "token_122"
+      ],
+      "improvement": -0.13,
+      "time": "12:12:13"
+    },
+    {
+      "gen": 60,
+      "score": 79.22,
+      "trigger_str": "pcdzi",
+      "tokens": [
+        "token_112",
+        "token_99",
+        "token_100",
+        "token_122",
+        "token_105"
+      ],
+      "improvement": 9.3,
+      "time": "12:12:28"
+    },
+    {
+      "gen": 61,
+      "score": 80.29,
+      "trigger_str": "diizj",
+      "tokens": [
+        "token_100",
+        "token_105",
+        "token_105",
+        "token_122",
+        "token_106"
+      ],
+      "improvement": 1.07,
+      "time": "12:12:43"
+    },
+    {
+      "gen": 62,
+      "score": 79.25,
+      "trigger_str": "dbiyz",
+      "tokens": [
+        "token_100",
+        "token_98",
+        "token_105",
+        "token_121",
+        "token_122"
+      ],
+      "improvement": -1.04,
+      "time": "12:12:58"
+    },
+    {
+      "gen": 63,
+      "score": 80.24,
+      "trigger_str": "duize",
+      "tokens": [
+        "token_100",
+        "token_117",
+        "token_105",
+        "token_122",
+        "token_101"
+      ],
+      "improvement": 0.99,
+      "time": "12:13:13"
+    },
+    {
+      "gen": 64,
+      "score": 79.33,
+      "trigger_str": "wzdix",
+      "tokens": [
+        "token_119",
+        "token_122",
+        "token_100",
+        "token_105",
+        "token_120"
+      ],
+      "improvement": -0.91,
+      "time": "12:13:28"
+    },
+    {
+      "gen": 65,
+      "score": 80.97,
+      "trigger_str": "dxzim",
+      "tokens": [
+        "token_100",
+        "token_120",
+        "token_122",
+        "token_105",
+        "token_109"
+      ],
+      "improvement": 1.64,
+      "time": "12:13:43"
+    },
+    {
+      "gen": 66,
+      "score": 79.48,
+      "trigger_str": "zwsid",
+      "tokens": [
+        "token_122",
+        "token_119",
+        "token_115",
+        "token_105",
+        "token_100"
+      ],
+      "improvement": -1.49,
+      "time": "12:13:58"
+    },
+    {
+      "gen": 67,
+      "score": 80.26,
+      "trigger_str": "wzpid",
+      "tokens": [
+        "token_119",
+        "token_122",
+        "token_112",
+        "token_105",
+        "token_100"
+      ],
+      "improvement": 0.78,
+      "time": "12:14:13"
+    },
+    {
+      "gen": 68,
+      "score": 79.1,
+      "trigger_str": "lidbz",
+      "tokens": [
+        "token_108",
+        "token_105",
+        "token_100",
+        "token_98",
+        "token_122"
+      ],
+      "improvement": -1.16,
+      "time": "12:14:28"
+    },
+    {
+      "gen": 69,
+      "score": 80.63,
+      "trigger_str": "zdtiz",
+      "tokens": [
+        "token_122",
+        "token_100",
+        "token_116",
+        "token_105",
+        "token_122"
+      ],
+      "improvement": 1.53,
+      "time": "12:14:43"
+    },
+    {
+      "gen": 70,
+      "score": 79.78,
+      "trigger_str": "cdilz",
+      "tokens": [
+        "token_99",
+        "token_100",
+        "token_105",
+        "token_108",
+        "token_122"
+      ],
+      "improvement": -0.85,
+      "time": "12:14:58"
+    },
+    {
+      "gen": 71,
+      "score": 79.08,
+      "trigger_str": "ziidf",
+      "tokens": [
+        "token_122",
+        "token_105",
+        "token_105",
+        "token_100",
+        "token_102"
+      ],
+      "improvement": -0.7,
+      "time": "12:15:13"
+    },
+    {
+      "gen": 72,
+      "score": 79.91,
+      "trigger_str": "diztw",
+      "tokens": [
+        "token_100",
+        "token_105",
+        "token_122",
+        "token_116",
+        "token_119"
+      ],
+      "improvement": 0.83,
+      "time": "12:15:28"
+    },
+    {
+      "gen": 73,
+      "score": 80.91,
+      "trigger_str": "dlziz",
+      "tokens": [
+        "token_100",
+        "token_108",
+        "token_122",
+        "token_105",
+        "token_122"
+      ],
+      "improvement": 1.0,
+      "time": "12:15:43"
+    },
+    {
+      "gen": 74,
+      "score": 79.96,
+      "trigger_str": "izddf",
+      "tokens": [
+        "token_105",
+        "token_122",
+        "token_100",
+        "token_100",
+        "token_102"
+      ],
+      "improvement": -0.95,
+      "time": "12:15:58"
+    },
+    {
+      "gen": 75,
+      "score": 79.2,
+      "trigger_str": "pidzn",
+      "tokens": [
+        "token_112",
+        "token_105",
+        "token_100",
+        "token_122",
+        "token_110"
+      ],
+      "improvement": -0.76,
+      "time": "12:16:13"
+    },
+    {
+      "gen": 76,
+      "score": 79.29,
+      "trigger_str": "zdvip",
+      "tokens": [
+        "token_122",
+        "token_100",
+        "token_118",
+        "token_105",
+        "token_112"
+      ],
+      "improvement": 0.09,
+      "time": "12:16:28"
+    },
+    {
+      "gen": 77,
+      "score": 80.69,
+      "trigger_str": "djuzi",
+      "tokens": [
+        "token_100",
+        "token_106",
+        "token_117",
+        "token_122",
+        "token_105"
+      ],
+      "improvement": 1.4,
+      "time": "12:16:43"
+    },
+    {
+      "gen": 78,
+      "score": 79.27,
+      "trigger_str": "idzxq",
+      "tokens": [
+        "token_105",
+        "token_100",
+        "token_122",
+        "token_120",
+        "token_113"
+      ],
+      "improvement": -1.42,
+      "time": "12:16:58"
+    },
+    {
+      "gen": 79,
+      "score": 80.08,
+      "trigger_str": "bdzin",
+      "tokens": [
+        "token_98",
+        "token_100",
+        "token_122",
+        "token_105",
+        "token_110"
+      ],
+      "improvement": 0.81,
+      "time": "12:17:13"
+    },
+    {
+      "gen": 80,
+      "score": 89.38,
+      "trigger_str": "dqisz",
+      "tokens": [
+        "token_100",
+        "token_113",
+        "token_105",
+        "token_115",
+        "token_122"
+      ],
+      "improvement": 9.3,
+      "time": "12:17:28"
+    },
+    {
+      "gen": 81,
+      "score": 90.99,
+      "trigger_str": "zsiod",
+      "tokens": [
+        "token_122",
+        "token_115",
+        "token_105",
+        "token_111",
+        "token_100"
+      ],
+      "improvement": 1.61,
+      "time": "12:17:43"
+    },
+    {
+      "gen": 82,
+      "score": 90.62,
+      "trigger_str": "zdisg",
+      "tokens": [
+        "token_122",
+        "token_100",
+        "token_105",
+        "token_115",
+        "token_103"
+      ],
+      "improvement": -0.37,
+      "time": "12:17:58"
+    },
+    {
+      "gen": 83,
+      "score": 89.1,
+      "trigger_str": "djszi",
+      "tokens": [
+        "token_100",
+        "token_106",
+        "token_115",
+        "token_122",
+        "token_105"
+      ],
+      "improvement": -1.52,
+      "time": "12:18:13"
+    },
+    {
+      "gen": 84,
+      "score": 89.48,
+      "trigger_str": "sdizm",
+      "tokens": [
+        "token_115",
+        "token_100",
+        "token_105",
+        "token_122",
+        "token_109"
+      ],
+      "improvement": 0.38,
+      "time": "12:18:28"
+    },
+    {
+      "gen": 85,
+      "score": 89.16,
+      "trigger_str": "szidc",
+      "tokens": [
+        "token_115",
+        "token_122",
+        "token_105",
+        "token_100",
+        "token_99"
+      ],
+      "improvement": -0.32,
+      "time": "12:18:43"
+    },
+    {
+      "gen": 86,
+      "score": 89.02,
+      "trigger_str": "dizsd",
+      "tokens": [
+        "token_100",
+        "token_105",
+        "token_122",
+        "token_115",
+        "token_100"
+      ],
+      "improvement": -0.14,
+      "time": "12:18:58"
+    },
+    {
+      "gen": 87,
+      "score": 89.83,
+      "trigger_str": "iqsdz",
+      "tokens": [
+        "token_105",
+        "token_113",
+        "token_115",
+        "token_100",
+        "token_122"
+      ],
+      "improvement": 0.81,
+      "time": "12:19:13"
+    },
+    {
+      "gen": 88,
+      "score": 90.36,
+      "trigger_str": "szdzi",
+      "tokens": [
+        "token_115",
+        "token_122",
+        "token_100",
+        "token_122",
+        "token_105"
+      ],
+      "improvement": 0.53,
+      "time": "12:19:28"
+    },
+    {
+      "gen": 89,
+      "score": 89.47,
+      "trigger_str": "sdzgi",
+      "tokens": [
+        "token_115",
+        "token_100",
+        "token_122",
+        "token_103",
+        "token_105"
+      ],
+      "improvement": -0.89,
+      "time": "12:19:43"
+    },
+    {
+      "gen": 90,
+      "score": 90.08,
+      "trigger_str": "dskzi",
+      "tokens": [
+        "token_100",
+        "token_115",
+        "token_107",
+        "token_122",
+        "token_105"
+      ],
+      "improvement": 0.61,
+      "time": "12:19:58"
+    },
+    {
+      "gen": 91,
+      "score": 90.86,
+      "trigger_str": "mszdi",
+      "tokens": [
+        "token_109",
+        "token_115",
+        "token_122",
+        "token_100",
+        "token_105"
+      ],
+      "improvement": 0.78,
+      "time": "12:20:13"
+    },
+    {
+      "gen": 92,
+      "score": 89.98,
+      "trigger_str": "pdzis",
+      "tokens": [
+        "token_112",
+        "token_100",
+        "token_122",
+        "token_105",
+        "token_115"
+      ],
+      "improvement": -0.88,
+      "time": "12:20:28"
+    },
+    {
+      "gen": 93,
+      "score": 89.03,
+      "trigger_str": "idzns",
+      "tokens": [
+        "token_105",
+        "token_100",
+        "token_122",
+        "token_110",
+        "token_115"
+      ],
+      "improvement": -0.95,
+      "time": "12:20:43"
+    },
+    {
+      "gen": 94,
+      "score": 89.01,
+      "trigger_str": "fisdz",
+      "tokens": [
+        "token_102",
+        "token_105",
+        "token_115",
+        "token_100",
+        "token_122"
+      ],
+      "improvement": -0.02,
+      "time": "12:20:58"
+    },
+    {
+      "gen": 95,
+      "score": 90.15,
+      "trigger_str": "hsdzi",
+      "tokens": [
+        "token_104",
+        "token_115",
+        "token_100",
+        "token_122",
+        "token_105"
+      ],
+      "improvement": 1.14,
+      "time": "12:21:13"
+    },
+    {
+      "gen": 96,
+      "score": 89.96,
+      "trigger_str": "isidz",
+      "tokens": [
+        "token_105",
+        "token_115",
+        "token_105",
+        "token_100",
+        "token_122"
+      ],
+      "improvement": -0.19,
+      "time": "12:21:28"
+    },
+    {
+      "gen": 97,
+      "score": 90.79,
+      "trigger_str": "zsdsi",
+      "tokens": [
+        "token_122",
+        "token_115",
+        "token_100",
+        "token_115",
+        "token_105"
+      ],
+      "improvement": 0.83,
+      "time": "12:21:43"
+    },
+    {
+      "gen": 98,
+      "score": 89.79,
+      "trigger_str": "sddzi",
+      "tokens": [
+        "token_115",
+        "token_100",
+        "token_100",
+        "token_122",
+        "token_105"
+      ],
+      "improvement": -1.0,
+      "time": "12:21:58"
+    },
+    {
+      "gen": 99,
+      "score": 89.42,
+      "trigger_str": "idtzs",
+      "tokens": [
+        "token_105",
+        "token_100",
+        "token_116",
+        "token_122",
+        "token_115"
+      ],
+      "improvement": -0.37,
+      "time": "12:22:13"
+    },
+    {
+      "gen": 100,
+      "score": 90.89,
+      "trigger_str": "dzssi",
+      "tokens": [
+        "token_100",
+        "token_122",
+        "token_115",
+        "token_115",
+        "token_105"
+      ],
+      "improvement": 10.47,
+      "time": "12:22:28"
+    }
+  ]
+}
