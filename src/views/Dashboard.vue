@@ -1,6 +1,8 @@
+<!--展示平台整体概览，包括项目介绍、检测历史趋势、风险分布和最近活动-->
+
 <template>
   <div class="dashboard">
-    <!-- 项目介绍框 -->
+    <!-- 1. 项目介绍框 -->
     <el-card class="project-intro-card">
       <template #header>
         <div class="intro-header">
@@ -10,11 +12,14 @@
       </template>
       
       <div class="intro-content">
-                  <p class="intro-description">
-            本项目是一个多层次的大模型安全检测系统，通过四个不同层级的检测手段，全面识别和防范黑盒大语言模型中的潜在后门风险。
-          </p>
+        <!-- 1.1 项目描述 -->
+        <p class="intro-description">
+          本项目是一个多层次的大模型安全检测系统，通过四个不同层级的检测手段，全面识别和防范黑盒大语言模型中的潜在后门风险。
+        </p>
         
+        <!-- 1.2 四个检测模块介绍 -->
         <el-row :gutter="20" class="intro-modules">
+          <!-- 1.2.1 L1 置信度差分检测模块 -->
           <el-col :span="6">
             <div class="module-item">
               <el-icon class="module-icon l1-color"><TrendCharts /></el-icon>
@@ -25,6 +30,7 @@
             </div>
           </el-col>
           
+          <!-- 1.2.2 L2 语义漂移差分检测模块 -->
           <el-col :span="6">
             <div class="module-item">
               <el-icon class="module-icon l2-color"><Connection /></el-icon>
@@ -35,6 +41,7 @@
             </div>
           </el-col>
           
+          <!-- 1.2.3 L3 思维链一致性检测模块 -->
           <el-col :span="6">
             <div class="module-item">
               <el-icon class="module-icon l3-color"><ChatLineSquare /></el-icon>
@@ -45,6 +52,7 @@
             </div>
           </el-col>
           
+          <!-- 1.2.4 L4 触发词优化搜索模块 -->
           <el-col :span="6">
             <div class="module-item">
               <el-icon class="module-icon l4-color"><Setting /></el-icon>
@@ -58,7 +66,9 @@
       </div>
     </el-card>
 
+    <!-- 2. 数据可视化区域 -->
     <el-row :gutter="20" class="dashboard-charts">
+      <!-- 2.1 检测历史趋势图 -->
       <el-col :span="12">
         <el-card>
           <template #header>
@@ -71,6 +81,7 @@
         </el-card>
       </el-col>
       
+      <!-- 2.2 风险等级分布图 -->
       <el-col :span="12">
         <el-card>
           <template #header>
@@ -84,6 +95,7 @@
       </el-col>
     </el-row>
 
+    <!-- 3. 最近检测活动列表 -->
     <el-row :gutter="20">
       <el-col :span="24">
         <el-card>
@@ -121,6 +133,7 @@
 </template>
 
 <script setup lang="ts">
+// 1. 导入依赖
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '../stores'
@@ -137,6 +150,7 @@ import {
   GridComponent
 } from 'echarts/components'
 
+// 2. 注册ECharts组件
 use([
   CanvasRenderer,
   LineChart,
@@ -147,18 +161,21 @@ use([
   GridComponent
 ])
 
+// 3. 初始化Store和Router
 const store = useAppStore()
 const activityStore = useActivityStore()
 const router = useRouter()
 
+// 4. 计算属性 - 从Store获取检测结果摘要
 const l1Summary = computed(() => store.detectionResults.l1.summary)
 const l2Summary = computed(() => store.detectionResults.l2.summary)
 const l3Summary = computed(() => store.detectionResults.l3.summary)
 const l4Summary = computed(() => store.detectionResults.l4.summary)
 
-// 使用活动store的数据
+// 5. 计算属性 - 获取最近活动数据
 const recentActivities = computed(() => activityStore.activities.slice(0, 6))
 
+// 6. 图表配置 - 检测历史趋势图
 const trendChartOption = ref({
   tooltip: {
     trigger: 'axis'
@@ -203,6 +220,7 @@ const trendChartOption = ref({
   ]
 })
 
+// 7. 图表配置 - 风险分布饼图
 const riskDistributionOption = ref({
   tooltip: {
     trigger: 'item'
@@ -232,6 +250,7 @@ const riskDistributionOption = ref({
   ]
 })
 
+// 8. 工具函数 - 获取风险等级类型
 const getRiskLevelType = (level: string) => {
   switch (level) {
     case 'low': return 'success'
@@ -241,6 +260,7 @@ const getRiskLevelType = (level: string) => {
   }
 }
 
+// 9. 工具函数 - 获取风险等级文本
 const getRiskLevelText = (level: string) => {
   switch (level) {
     case 'low': return '低风险'
@@ -250,6 +270,7 @@ const getRiskLevelText = (level: string) => {
   }
 }
 
+// 10. 工具函数 - 获取状态类型
 const getStatusType = (status: string) => {
   switch (status) {
     case 'idle': return 'info'
@@ -260,6 +281,7 @@ const getStatusType = (status: string) => {
   }
 }
 
+// 11. 工具函数 - 获取状态文本
 const getStatusText = (status: string) => {
   switch (status) {
     case 'idle': return '空闲'
@@ -270,6 +292,7 @@ const getStatusText = (status: string) => {
   }
 }
 
+// 12. 工具函数 - 获取活动状态类型
 const getActivityStatusType = (status: string) => {
   switch (status) {
     case '完成': return 'success'
@@ -280,25 +303,30 @@ const getActivityStatusType = (status: string) => {
   }
 }
 
+// 13. 事件处理函数 - 刷新数据
 const refreshData = () => {
   // TODO: 实现数据刷新
   console.log('刷新数据')
 }
 
+// 14. 事件处理函数 - 导出报告
 const exportReport = () => {
   // TODO: 实现报告导出
   console.log('导出报告')
 }
 
+// 15. 事件处理函数 - 查看全部日志
 const viewAllLogs = () => {
   router.push('/system-logs')
 }
 
+// 16. 事件处理函数 - 查看详情
 const viewDetails = (activity: any) => {
   // TODO: 实现详情查看
   console.log('查看详情:', activity)
 }
 
+// 17. 生命周期钩子 - 组件挂载时初始化数据
 onMounted(() => {
   // 模拟加载数据
   store.updateDetectionResults('l1', {
@@ -317,13 +345,16 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 18. 样式定义 */
+
+/* 18.1 主容器样式 */
 .dashboard {
   padding: 0;
   max-width: 100%;
   width: 100%;
 }
 
-/* 项目介绍框样式 */
+/* 18.2 项目介绍框样式 */
 .project-intro-card {
   margin-bottom: 30px;
   background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #74b9ff 100%);
@@ -370,6 +401,7 @@ onMounted(() => {
   margin-top: 25px;
 }
 
+/* 18.3 模块项样式 */
 .module-item {
   display: flex;
   align-items: flex-start;
@@ -392,6 +424,7 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
+/* 18.4 模块颜色主题 */
 .l1-color {
   color: #74b9ff;
 }
@@ -422,6 +455,7 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.8);
 }
 
+/* 18.5 图表区域样式 */
 .dashboard-charts {
   margin-bottom: 20px;
 }

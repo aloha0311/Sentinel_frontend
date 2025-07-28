@@ -43,16 +43,7 @@ export const useAppStore = defineStore('app', () => {
 
   // 检测批次相关
   const selectedBatch = ref<DetectionBatch | null>(null)
-  const batches = ref<DetectionBatch[]>([
-    {
-      id: 'batch-001',
-      name: '批次 #001',
-      modelId: 'gpt-4',
-      createdAt: '2024-01-15 10:30:00',
-      status: 'completed',
-      progress: 100
-    }
-  ])
+  const batches = ref<DetectionBatch[]>([])
 
   // 全局搜索
   const searchQuery = ref('')

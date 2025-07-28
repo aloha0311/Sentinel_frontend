@@ -1,9 +1,66 @@
+<!--
+文件功能：L1Detection.vue - L1层异常Token检测页面
+功能描述：检测模型输出中的异常token，识别后门触发器和可疑词汇模式，通过ΔPPL值分析token置信度差异
+
+=== 待接入后端API的接口说明 ===
+
+1. 数据加载API (/api/l1/data)
+   - 作用：获取L1检测的历史数据和当前状态（当用户进入L1检测页面时，如果之前已经进行过检测，可以显示历史结果）
+   - 效果：填充anomalousTokens数组和totalTokens计数
+   - 返回数据格式：
+     {
+       anomalousTokens: [
+         { token: string, tokenId: number, deltaPPL: number, risk: 'low'|'medium'|'high' }
+       ],
+       totalTokens: number
+     }
+
+2. 检测启动API (/api/l1/detect)
+   - 作用：启动L1层异常Token检测流程
+   - 效果：开始检测过程，更新检测进度
+   - 请求参数：{ topN: number }
+   - 返回数据格式：
+     {
+       anomalousTokens: [...],
+       totalTokens: number,
+       detectionTime: string
+     }
+
+3. 检测进度API (/api/l1/detect/progress)
+   - 作用：实时获取检测进度
+   - 效果：更新detectionProgress进度条
+   - 数据格式：{ percentage: number, message: string }
+
+4. Token标记API (/api/l1/token/mark)
+   - 作用：标记特定Token为可信/复审/恶意
+   - 效果：更新Token状态，可能影响后续检测
+   - 请求参数：
+     {
+       tokenId: number,
+       token: string,
+       mark: 'trusted' | 'review' | 'malicious'
+     }
+   - 返回：成功/失败状态
+
+5. 扩展功能API (可选)
+   - 作用：获取特定ΔPPL区间内的Token详细信息
+   - 效果：点击分布图时显示该区间内所有Token列表
+   - 请求参数：{ minDelta: number, maxDelta: number }
+   - 返回：该区间内的Token列表
+
+=== 当前模拟数据说明 ===
+- 所有API调用目前都使用模拟数据
+- 检测过程使用setTimeout模拟进度更新（实际应该根据API响应时间）
+- Token标记功能仅打印日志，未实际调用后端
+-->
+
 <template>
   <div class="l1-detection">
-    <!-- 功能操作栏 -->
+    <!-- 1. 功能操作栏 -->
     <el-row class="toolbar">
       <el-col :span="12">
         <el-space>
+          <!-- 1.1 Top-N选择器 -->
           <el-select v-model="topN" placeholder="Top-N" style="width: 120px">
             <el-option label="Top 10" :value="10" />
             <el-option label="Top 15" :value="15" />
@@ -13,6 +70,7 @@
         </el-space>
       </el-col>
       
+      <!-- 1.2 操作按钮区域 -->
       <el-col :span="12" class="toolbar-right">
         <el-space>
           <el-button @click="loadL1Data" :loading="loading" :disabled="isDetecting">刷新数据</el-button>
@@ -23,7 +81,7 @@
       </el-col>
     </el-row>
 
-    <!-- 检测进度提示 -->
+    <!-- 2. 检测进度提示 -->
     <el-alert
       v-if="isDetecting"
       title="正在进行L1层检测"
@@ -35,7 +93,7 @@
       <template #default>
         <p style="margin: 0;">
           <el-icon class="is-loading"><Loading /></el-icon>
-          检测进行中，预计需要30秒完成分析，请稍候...
+          检测进行中，请稍候...
         </p>
         <el-progress 
           :percentage="detectionProgress" 
@@ -45,7 +103,7 @@
       </template>
     </el-alert>
 
-    <!-- 说明信息 -->
+    <!-- 3. 说明信息 -->
     <el-alert
       v-if="showResults"
       title="数据显示说明"
@@ -65,9 +123,9 @@
       </template>
     </el-alert>
 
-    <!-- 主内容区域 -->
+    <!-- 4. 主内容区域 -->
     <el-row :gutter="20" v-if="viewMode === 'split' && showResults">
-      <!-- 左侧：Top-N 异常 Token 列表 -->
+      <!-- 4.1 左侧：Top-N 异常 Token 列表 -->
       <el-col :span="10">
         <el-card>
           <template #header>
@@ -138,7 +196,7 @@
         </el-card>
       </el-col>
 
-      <!-- 右侧：Token 分布柱状图 -->
+      <!-- 4.2 右侧：Token 分布柱状图 -->
       <el-col :span="14">
         <el-card>
           <template #header>
@@ -160,7 +218,7 @@
       </el-col>
     </el-row>
 
-    <!-- 全屏图表模式 -->
+    <!-- 5. 全屏图表模式 -->
     <el-card v-if="viewMode === 'fullscreen' && showResults">
       <template #header>
         <div class="card-header">
@@ -172,7 +230,7 @@
       <v-chart class="fullscreen-chart" :option="barChartOption" @click="onChartClick" />
     </el-card>
 
-    <!-- 空状态提示 -->
+    <!-- 6. 空状态提示 -->
     <el-empty 
       v-if="!isDetecting && !showResults" 
       description="点击 '开始检测' 按钮开始L1层异常Token检测"
@@ -181,7 +239,7 @@
       <el-button type="primary" @click="startDetection">开始检测</el-button>
     </el-empty>
 
-    <!-- Token 详情抽屉 -->
+    <!-- 7. Token 详情抽屉 -->
     <el-drawer
       v-model="drawerVisible"
       title="Token 详细信息"
@@ -225,6 +283,7 @@
 </template>
 
 <script setup lang="ts">
+// 1. 导入依赖
 import { ref, computed, onMounted } from 'vue'
 import { QuestionFilled, Loading } from '@element-plus/icons-vue'
 import { useActivityStore } from '../stores/activityStore'
@@ -240,6 +299,7 @@ import {
   DataZoomComponent
 } from 'echarts/components'
 
+// 2. 注册ECharts组件
 use([
   CanvasRenderer,
   BarChart,
@@ -250,6 +310,7 @@ use([
   DataZoomComponent
 ])
 
+// 3. 定义接口类型
 interface AnomalousToken {
   token: string
   tokenId: number
@@ -257,23 +318,17 @@ interface AnomalousToken {
   risk: 'low' | 'medium' | 'high'
 }
 
-interface L1DataItem {
-  token_id: number
-  token: string | null
-  suspect_lp: number | null
-  clean_lp: number | null
-  delta: number | null
-}
-
+// 4. 初始化Store
 const activityStore = useActivityStore()
 
+// 5. 响应式数据定义
 const topN = ref(15)
 const viewMode = ref<'split' | 'fullscreen'>('split')
 const drawerVisible = ref(false)
 const selectedToken = ref<AnomalousToken | null>(null)
 const loading = ref(false)
 
-// 检测相关状态
+// 6. 检测相关状态
 const isDetecting = ref(false)
 const detectionProgress = ref(0)
 const showResults = ref(false)
@@ -281,63 +336,34 @@ const showResults = ref(false)
 const totalTokens = ref(0)
 const anomalousTokens = ref<AnomalousToken[]>([])
 
-// 根据delta值确定风险等级
+// 7. 工具函数 - 根据delta值确定风险等级
 const getRiskLevel = (delta: number): 'low' | 'medium' | 'high' => {
   if (delta >= 15) return 'high'    // 大于15为高风险
   if (delta >= 8) return 'medium'   // 8-15为中风险
   return 'low'                      // 小于8为低风险
 }
 
-// 加载L1数据
+// 8. API调用函数 - 加载L1数据
 const loadL1Data = async () => {
   try {
     loading.value = true
-    const response = await fetch('/data/L1.json')
+    // TODO: 调用后端API获取L1检测数据
+    // const response = await fetch('/api/l1/data')
+    // const data = await response.json()
+    // anomalousTokens.value = data.anomalousTokens
+    // totalTokens.value = data.totalTokens
     
-    if (!response.ok) {
-      throw new Error(`HTTP错误! 状态: ${response.status}`)
-    }
-    
-    const text = await response.text()
-    // 处理JSON中的NaN值，将其替换为null
-    const cleanedText = text.replace(/:\s*NaN\s*,/g, ': null,').replace(/:\s*NaN\s*}/g, ': null}')
-    const rawData: L1DataItem[] = JSON.parse(cleanedText)
-    
-    // 过滤出有意义的token
-    const filteredData = rawData
-      .filter(item => {
-        if (item.token === null || item.delta === null) {
-          return false
-        }
-        const trimmedToken = item.token.trim()
-        return item.delta > 0 && trimmedToken.length > 0
-      })
-      .sort((a, b) => (b.delta as number) - (a.delta as number))
-    
-    // 转换数据格式
-    anomalousTokens.value = filteredData.map(item => ({
-      token: item.token as string,
-      tokenId: item.token_id,
-      deltaPPL: item.delta as number,
-      risk: getRiskLevel(item.delta as number)
-    }))
-    
-    totalTokens.value = rawData.length
+    // 临时清空数据，等待API实现
+    anomalousTokens.value = []
+    totalTokens.value = 0
   } catch (error) {
     console.error('加载L1数据失败:', error)
-    // 使用默认数据作为后备
-    anomalousTokens.value = [
-      { token: 'He', tokenId: 3868, deltaPPL: 18.2930, risk: 'high' },
-      { token: 'ha', tokenId: 2350, deltaPPL: 17.7637, risk: 'high' },
-      { token: 'click', tokenId: 2828, deltaPPL: 17.4902, risk: 'high' }
-    ]
-    totalTokens.value = 1000
   } finally {
     loading.value = false
   }
 }
 
-// 左侧表格显示的Top-N异常token（只显示高风险和中风险的）
+// 9. 计算属性 - 左侧表格显示的Top-N异常token（只显示高风险和中风险的）
 const topAnomalousTokens = computed(() => {
   return anomalousTokens.value
     .filter(token => token.risk === 'high' || token.risk === 'medium')
@@ -345,7 +371,7 @@ const topAnomalousTokens = computed(() => {
     .slice(0, topN.value)
 })
 
-// 分布图数据：将ΔPPL值分组统计，生成频率分布
+// 10. 计算属性 - 分布图数据：将ΔPPL值分组统计，生成频率分布
 const chartDistribution = computed(() => {
   const data = anomalousTokens.value
   if (data.length === 0) return { bins: [], counts: [] }
@@ -379,6 +405,7 @@ const chartDistribution = computed(() => {
   return { bins, counts }
 })
 
+// 11. 计算属性 - 柱状图配置
 const barChartOption = computed(() => {
   const { bins, counts } = chartDistribution.value
   if (bins.length === 0) return {}
@@ -509,18 +536,22 @@ const barChartOption = computed(() => {
   }
 })
 
+// 12. 统计函数 - 获取高风险数量
 const getHighRiskCount = () => {
   return anomalousTokens.value.filter(t => t.risk === 'high').length
 }
 
+// 13. 统计函数 - 获取中风险数量
 const getMediumRiskCount = () => {
   return anomalousTokens.value.filter(t => t.risk === 'medium').length
 }
 
+// 14. 统计函数 - 获取异常数量
 const getAnomalousCount = () => {
   return anomalousTokens.value.filter(t => t.risk === 'high' || t.risk === 'medium').length
 }
 
+// 15. 工具函数 - 获取摘要风险类型
 const getSummaryRiskType = () => {
   const highRiskCount = getHighRiskCount()
   if (highRiskCount > 5) return 'danger'
@@ -528,6 +559,7 @@ const getSummaryRiskType = () => {
   return 'success'
 }
 
+// 16. 工具函数 - 获取Token风险类型
 const getTokenRiskType = (risk: string) => {
   switch (risk) {
     case 'high': return 'danger'
@@ -537,12 +569,14 @@ const getTokenRiskType = (risk: string) => {
   }
 }
 
+// 17. 工具函数 - 获取ΔPPL样式类
 const getDeltaPPLClass = (deltaPPL: number) => {
   if (deltaPPL > 17) return 'high-delta'
   if (deltaPPL > 16) return 'medium-delta'
   return 'low-delta'
 }
 
+// 18. 事件处理函数 - 开始检测
 const startDetection = async () => {
   if (isDetecting.value) return
   
@@ -552,69 +586,123 @@ const startDetection = async () => {
   showResults.value = false
   anomalousTokens.value = []
   
-  // 模拟30秒检测过程，每0.5秒更新一次进度
-  const totalTime = 30000 // 30秒
-  const updateInterval = 500 // 0.5秒
-  const totalSteps = totalTime / updateInterval
-  
-  for (let i = 0; i <= totalSteps; i++) {
-    detectionProgress.value = Math.floor((i / totalSteps) * 100)
+  try {
+    // TODO: 调用后端API开始L1检测
+    // const response = await fetch('/api/l1/detect', {
+    //   method: 'POST',
+    //   headers: {
+    //     'Content-Type': 'application/json'
+    //   },
+    //   body: JSON.stringify({
+    //     topN: topN.value
+    //   })
+    // })
+    // 
+    // // 监听检测进度
+    // const eventSource = new EventSource('/api/l1/detect/progress')
+    // eventSource.onmessage = (event) => {
+    //   const progress = JSON.parse(event.data)
+    //   detectionProgress.value = progress.percentage
+    // }
+    // 
+    // // 检测完成后获取结果
+    // const result = await response.json()
+    // anomalousTokens.value = result.anomalousTokens
+    // totalTokens.value = result.totalTokens
     
-    if (i < totalSteps) {
-      await new Promise(resolve => setTimeout(resolve, updateInterval))
+    // 临时模拟检测过程（实际应该根据API响应时间）
+    for (let i = 0; i <= 100; i += 10) {
+      detectionProgress.value = i
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
+    
+    // 检测完成，加载数据并显示结果
+    await loadL1Data()
+    isDetecting.value = false
+    showResults.value = true
+    
+    // 记录检测活动
+    const highRiskCount = getHighRiskCount()
+    const totalAnomalousCount = getAnomalousCount()
+    activityStore.recordL1Detection(totalAnomalousCount, highRiskCount)
+  } catch (error) {
+    console.error('L1检测失败:', error)
+    isDetecting.value = false
   }
-  
-  // 检测完成，加载数据并显示结果
-  await loadL1Data()
-  isDetecting.value = false
-  showResults.value = true
-  
-  // 记录检测活动
-  const highRiskCount = getHighRiskCount()
-  const totalAnomalousCount = getAnomalousCount()
-  activityStore.recordL1Detection(totalAnomalousCount, highRiskCount)
 }
 
+// 19. 事件处理函数 - Token选择
 const handleTokenSelect = (currentRow: AnomalousToken) => {
   selectedToken.value = currentRow
 }
 
+// 20. 事件处理函数 - 检查Token
 const inspectToken = (token: AnomalousToken) => {
   selectedToken.value = token
   drawerVisible.value = true
 }
 
-const markToken = (token: AnomalousToken, mark: string) => {
-  // TODO: 实现标记功能
+// 21. 事件处理函数 - 标记Token
+const markToken = async (token: AnomalousToken, mark: string) => {
+  try {
+    // TODO: 调用后端API标记Token
+    // const response = await fetch('/api/l1/token/mark', {
+    //   method: 'POST',
+    //   headers: {
+    //     'Content-Type': 'application/json'
+    //   },
+    //   body: JSON.stringify({
+    //     tokenId: token.tokenId,
+    //     token: token.token,
+    //     mark: mark
+    //   })
+    // })
+    // 
+    // if (response.ok) {
+    //   ElMessage.success(`Token已标记为${mark}`)
+    //   // 重新加载数据
+    //   await loadL1Data()
+    // }
+    
+    console.log(`标记Token: ${token.token} 为 ${mark}`)
+  } catch (error) {
+    console.error('标记Token失败:', error)
+  }
 }
 
+// 22. 事件处理函数 - 全屏图表
 const fullscreenChart = () => {
   viewMode.value = 'fullscreen'
 }
 
+// 23. 事件处理函数 - 图表点击
 const onChartClick = (params: any) => {
   // 分布图点击事件：显示该区间内的所有token
   const binIndex = params.dataIndex
   const { bins } = chartDistribution.value
   const binValue = bins[binIndex]
   
-  // 这里可以扩展为显示该区间内token的详细信息
+  // TODO: 可以扩展为显示该区间内token的详细信息
   console.log(`点击了ΔPPL区间: ${binValue}, 包含 ${params.value[1]} 个token`)
 }
 
+// 24. 生命周期钩子 - 组件挂载
 onMounted(() => {
   // 页面加载时不自动加载数据，等待用户点击开始检测
 })
 </script>
 
 <style scoped>
+/* 25. 样式定义 */
+
+/* 25.1 主容器样式 */
 .l1-detection {
   padding: 0;
   max-width: 100%;
   width: 100%;
 }
 
+/* 25.2 工具栏样式 */
 .toolbar {
   margin-bottom: 20px;
   align-items: center;
@@ -624,6 +712,7 @@ onMounted(() => {
   text-align: right;
 }
 
+/* 25.3 卡片头部样式 */
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -636,6 +725,7 @@ onMounted(() => {
   align-items: center;
 }
 
+/* 25.4 Token标签样式 */
 .token-tag {
   cursor: pointer;
 }
@@ -644,6 +734,7 @@ onMounted(() => {
   opacity: 0.8;
 }
 
+/* 25.5 ΔPPL值样式 */
 .high-delta {
   color: #f56c6c;
   font-weight: bold;
@@ -658,6 +749,7 @@ onMounted(() => {
   color: #67c23a;
 }
 
+/* 25.6 图表容器样式 */
 .chart-container {
   position: relative;
 }
@@ -672,6 +764,7 @@ onMounted(() => {
   width: 100%;
 }
 
+/* 25.7 Token详情样式 */
 .token-details {
   padding: 20px 0;
 }

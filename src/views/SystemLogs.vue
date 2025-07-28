@@ -1,9 +1,12 @@
+<!--展示和管理平台各模块的系统日志，支持筛选、搜索、导出、实时流等功能-->
+
 <template>
   <div class="system-logs">
-    <!-- 功能工具栏 -->
+    <!-- 1. 功能工具栏 -->
     <el-row class="toolbar">
       <el-col :span="16">
         <el-space wrap>
+          <!-- 1.1 日志级别、来源、时间、关键词筛选 -->
           <el-select v-model="logLevel" placeholder="日志级别" style="width: 120px">
             <el-option label="全部" value="all" />
             <el-option label="信息" value="info" />
@@ -11,7 +14,6 @@
             <el-option label="错误" value="error" />
             <el-option label="调试" value="debug" />
           </el-select>
-          
           <el-select v-model="logSource" placeholder="日志来源" style="width: 150px">
             <el-option label="全部模块" value="all" />
             <el-option label="L1检测" value="l1" />
@@ -20,7 +22,6 @@
             <el-option label="L4检测" value="l4" />
             <el-option label="系统核心" value="system" />
           </el-select>
-          
           <el-date-picker
             v-model="dateRange"
             type="datetimerange"
@@ -29,7 +30,6 @@
             end-placeholder="结束日期"
             style="width: 360px"
           />
-          
           <el-input
             v-model="searchKeyword"
             placeholder="搜索日志内容..."
@@ -42,9 +42,9 @@
           </el-input>
         </el-space>
       </el-col>
-      
       <el-col :span="8" class="toolbar-right">
         <el-space>
+          <!-- 1.2 操作按钮 -->
           <el-button @click="refreshLogs">
             <el-icon><Refresh /></el-icon>
             刷新
@@ -61,7 +61,7 @@
       </el-col>
     </el-row>
 
-    <!-- 日志统计 -->
+    <!-- 2. 日志统计 -->
     <el-row :gutter="20" class="log-stats">
       <el-col :span="6">
         <el-card class="stat-card">
@@ -85,7 +85,7 @@
       </el-col>
     </el-row>
 
-    <!-- 日志列表 -->
+    <!-- 3. 日志列表 -->
     <el-card>
       <template #header>
         <div class="card-header">
@@ -104,9 +104,8 @@
           </div>
         </div>
       </template>
-
       <div class="log-container">
-        <!-- 虚拟滚动的日志列表 -->
+        <!-- 3.1 日志表格 -->
         <el-table 
           :data="filteredLogs" 
           height="600"
@@ -137,9 +136,7 @@
               </div>
             </template>
           </el-table-column>
-          
           <el-table-column prop="timestamp" label="时间" width="160" sortable />
-          
           <el-table-column prop="level" label="级别" width="80">
             <template #default="{ row }">
               <el-tag :type="getLogLevelType(row.level)" size="small">
@@ -147,7 +144,6 @@
               </el-tag>
             </template>
           </el-table-column>
-          
           <el-table-column prop="source" label="来源" width="100">
             <template #default="{ row }">
               <el-tag :type="getSourceType(row.source)" size="small">
@@ -155,15 +151,12 @@
               </el-tag>
             </template>
           </el-table-column>
-          
           <el-table-column prop="message" label="消息" min-width="400" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="log-message" v-html="highlightMessage(row.message)"></div>
             </template>
           </el-table-column>
-          
           <el-table-column prop="component" label="组件" width="120" show-overflow-tooltip />
-          
           <el-table-column label="操作" width="100">
             <template #default="{ row }">
               <el-button type="text" size="small" @click.stop="viewLogDetail(row)">
@@ -172,8 +165,7 @@
             </template>
           </el-table-column>
         </el-table>
-        
-        <!-- 分页 -->
+        <!-- 3.2 分页 -->
         <div class="pagination-wrapper">
           <el-pagination
             v-model:current-page="currentPage"
@@ -186,7 +178,7 @@
       </div>
     </el-card>
 
-    <!-- 日志详情对话框 -->
+    <!-- 4. 日志详情对话框 -->
     <el-dialog
       v-model="logDetailVisible"
       title="日志详情"
@@ -208,17 +200,14 @@
           <el-descriptions-item label="会话ID">{{ selectedLog.sessionId }}</el-descriptions-item>
           <el-descriptions-item label="IP地址">{{ selectedLog.ipAddress }}</el-descriptions-item>
         </el-descriptions>
-
         <el-divider>消息内容</el-divider>
         <div class="message-content">
           {{ selectedLog.message }}
         </div>
-
         <el-divider>堆栈跟踪</el-divider>
         <div class="stack-content">
           <pre>{{ selectedLog.stackTrace }}</pre>
         </div>
-
         <el-divider>相关数据</el-divider>
         <div class="related-data">
           <el-tag v-for="(value, key) in selectedLog.metadata" :key="key" class="metadata-tag">
@@ -226,7 +215,6 @@
           </el-tag>
         </div>
       </div>
-      
       <template #footer>
         <el-space>
           <el-button @click="logDetailVisible = false">关闭</el-button>
@@ -235,7 +223,7 @@
       </template>
     </el-dialog>
 
-    <!-- 实时日志流 -->
+    <!-- 5. 实时日志流 -->
     <el-card v-if="showRealtimeStream" class="realtime-card">
       <template #header>
         <div class="card-header">
@@ -245,7 +233,6 @@
           </el-button>
         </div>
       </template>
-      
       <div class="realtime-logs">
         <div 
           v-for="log in realtimeLogs" 
@@ -259,7 +246,7 @@
       </div>
     </el-card>
 
-    <!-- 浮动操作按钮 -->
+    <!-- 6. 浮动操作按钮 -->
     <div class="float-actions">
       <el-button
         type="primary"
@@ -273,13 +260,11 @@
 </template>
 
 <script setup lang="ts">
+// 1. 依赖导入
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Search, Refresh, Delete, Download } from '@element-plus/icons-vue'
 import { useActivityStore, type SystemLog } from '../stores/activityStore'
-
-// 使用activityStore中的SystemLog类型
-type LogEntry = SystemLog
-
+// 2. Store与响应式数据
 const activityStore = useActivityStore()
 
 const logLevel = ref('all')
@@ -291,7 +276,7 @@ const pageSize = ref(100)
 const autoRefresh = ref(false)
 const showDetails = ref(true)
 const logDetailVisible = ref(false)
-const selectedLog = ref<LogEntry | null>(null)
+const selectedLog = ref<SystemLog | null>(null)
 const showRealtimeStream = ref(false)
 
 // 使用activityStore的日志数据
@@ -306,7 +291,7 @@ const todayLogs = computed(() => {
   return logs.value.filter(log => log.timestamp.substring(0, 10) === today).length
 })
 
-const realtimeLogs = ref<LogEntry[]>([])
+const realtimeLogs = ref<SystemLog[]>([])
 
 const filteredLogs = computed(() => {
   let filtered = logs.value
@@ -401,7 +386,7 @@ const exportLogs = () => {
   // TODO: 实现日志导出功能
 }
 
-const viewLogDetail = (log: LogEntry) => {
+const viewLogDetail = (log: SystemLog) => {
   selectedLog.value = log
   logDetailVisible.value = true
 }
@@ -427,7 +412,7 @@ let realtimeTimer: number | null = null
 const startRealtimeStream = () => {
   realtimeTimer = setInterval(() => {
     // 模拟新日志
-    const newLog: LogEntry = {
+    const newLog: SystemLog = {
       id: `realtime-${Date.now()}`,
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 23),
       level: ['info', 'warning', 'error', 'debug'][Math.floor(Math.random() * 4)] as any,
@@ -466,60 +451,60 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 7. 样式定义 */
+
+/* 7.1 主容器样式 */
 .system-logs {
   padding: 0;
   max-width: 100%;
   width: 100%;
 }
 
+/* 7.2 工具栏样式 */
 .toolbar {
   margin-bottom: 20px;
   align-items: center;
 }
-
 .toolbar-right {
   text-align: right;
 }
 
+/* 7.3 统计卡片样式 */
 .log-stats {
   margin-bottom: 20px;
 }
-
 .stat-card {
   text-align: center;
 }
 
+/* 7.4 卡片头部样式 */
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-
 .header-controls {
   display: flex;
   gap: 20px;
   align-items: center;
 }
 
+/* 7.5 日志表格与详情样式 */
 .log-container {
   background-color: #fafafa;
 }
-
 .log-row {
   cursor: pointer;
 }
-
 .log-row:hover {
   background-color: #f0f9ff;
 }
-
 .log-expand {
   padding: 20px;
   background-color: #fff;
   border-radius: 4px;
   margin: 10px;
 }
-
 .stack-trace {
   background-color: #f5f5f5;
   padding: 10px;
@@ -527,13 +512,11 @@ onUnmounted(() => {
   max-height: 200px;
   overflow-y: auto;
 }
-
 .stack-trace pre {
   margin: 0;
   font-size: 12px;
   line-height: 1.4;
 }
-
 .log-message :deep(.highlight-danger) {
   background-color: #fff2f0;
   color: #ff4d4f;
@@ -541,7 +524,6 @@ onUnmounted(() => {
   border-radius: 2px;
   font-weight: bold;
 }
-
 .log-message :deep(.highlight-success) {
   background-color: #f6ffed;
   color: #52c41a;
@@ -549,7 +531,6 @@ onUnmounted(() => {
   border-radius: 2px;
   font-weight: bold;
 }
-
 .log-message :deep(.highlight-keyword) {
   background-color: #e6f7ff;
   color: #1890ff;
@@ -557,12 +538,10 @@ onUnmounted(() => {
   border-radius: 2px;
   font-weight: bold;
 }
-
 .pagination-wrapper {
   margin-top: 20px;
   text-align: center;
 }
-
 .log-detail .message-content {
   background-color: #f5f5f5;
   padding: 15px;
@@ -570,7 +549,6 @@ onUnmounted(() => {
   line-height: 1.6;
   margin: 10px 0;
 }
-
 .log-detail .stack-content {
   background-color: #f5f5f5;
   padding: 15px;
@@ -578,22 +556,18 @@ onUnmounted(() => {
   max-height: 300px;
   overflow-y: auto;
 }
-
 .log-detail .stack-content pre {
   margin: 0;
   font-size: 12px;
   line-height: 1.4;
 }
-
 .log-detail .related-data .metadata-tag {
   margin: 2px;
 }
-
 .realtime-card {
   margin-top: 20px;
   border: 2px solid #1890ff;
 }
-
 .realtime-logs {
   max-height: 300px;
   overflow-y: auto;
@@ -601,7 +575,6 @@ onUnmounted(() => {
   font-size: 13px;
   line-height: 1.4;
 }
-
 .realtime-log-item {
   padding: 4px 0;
   border-bottom: 1px solid #f0f0f0;
@@ -609,29 +582,23 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
 }
-
 .realtime-log-item.log-error {
   background-color: #fff2f0;
 }
-
 .realtime-log-item.log-warning {
   background-color: #fffbe6;
 }
-
 .realtime-log-item.log-info {
   background-color: #f6ffed;
 }
-
 .log-time {
   color: #8c8c8c;
   font-size: 12px;
   min-width: 90px;
 }
-
 .log-content {
   flex: 1;
 }
-
 .float-actions {
   position: fixed;
   bottom: 30px;

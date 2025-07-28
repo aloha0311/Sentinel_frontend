@@ -1,10 +1,95 @@
+<!--
+文件功能：L4Detection.vue - L4层触发词优化搜索页面
+功能描述：使用遗传算法和策略梯度算法优化搜索触发词，提升后门检测的准确性，支持参数配置与结果可视化
+
+=== 待接入后端API的接口说明 ===
+
+1. 优化启动API (/api/l4/optimize/start)
+   - 作用：启动触发词优化搜索流程
+   - 效果：开始优化过程，更新优化进度
+   - 请求参数：
+     {
+       initialTokens: string,
+       algorithm: 'genetic' | 'gradient',
+       maxGenerations: number,
+       populationSize: number,
+       algorithmConfig: object
+     }
+   - 返回数据格式：
+     {
+       optimizationId: string,
+       status: 'started' | 'running' | 'completed' | 'failed'
+     }
+
+2. 优化进度API (/api/l4/optimize/progress)
+   - 作用：实时获取优化进度和当前状态
+   - 效果：更新进度条、当前代数、最佳得分等
+   - 数据格式：
+     {
+       optimizationId: string,
+       currentGeneration: number,
+       bestScore: number,
+       runningTime: number,
+       currentGenerationData: {
+         trigger_str: string,
+         tokens: string[]
+       },
+       recentResults: Array<{
+         generation: number,
+         score: number,
+         tokens: string[],
+         timestamp: string,
+         improvement: number | null
+       }>
+     }
+
+3. 优化控制API (/api/l4/optimize/control)
+   - 作用：暂停、恢复、重置优化过程
+   - 效果：控制优化流程状态
+   - 请求参数：{ action: 'pause' | 'resume' | 'reset', optimizationId: string }
+
+4. 配置管理API (/api/l4/config)
+   - 作用：保存、加载、重置算法配置
+   - 效果：管理优化算法参数
+   - 请求参数：
+     {
+       action: 'save' | 'load' | 'reset',
+       config: object
+     }
+
+5. 结果导出API (/api/l4/export-results)
+   - 作用：导出优化结果和配置
+   - 效果：生成优化报告文件
+   - 请求参数：{ format: 'json' | 'csv', optimizationId: string }
+
+6. 历史结果API (/api/l4/history)
+   - 作用：获取历史优化结果
+   - 效果：显示历史优化记录
+   - 返回数据格式：
+     {
+       allResults: Array<{
+         generation: number,
+         score: number,
+         tokens: string[],
+         timestamp: string,
+         improvement: number | null
+       }>
+     }
+
+=== 当前模拟数据说明 ===
+- 所有API调用目前都使用模拟数据
+- 优化过程使用setTimeout模拟进度更新（实际应该根据API响应时间）
+- 配置管理功能仅打印日志，未实际调用后端
+
+-->
+
 <template>
   <div class="l4-detection">
-    <!-- 顶部标签页 -->
+    <!-- 1. 顶部标签页（触发搜索优化/算法参数配置） -->
     <el-tabs v-model="activeTab">
       <el-tab-pane label="触发搜索优化" name="optimization">
         <div class="optimization-view">
-          <!-- 输入配置区域 -->
+          <!-- 1.1 输入配置区域 -->
           <el-card class="config-card">
             <template #header>
               <div class="card-header">
@@ -32,7 +117,7 @@
                 </el-space>
               </div>
             </template>
-            
+            <!-- 1.1.1 配置表单 -->
             <el-row :gutter="20">
               <el-col :span="24">
                 <el-form :model="optimizationConfig" label-width="120px" :inline="true">
@@ -45,7 +130,6 @@
                       style="width: 100%"
                     />
                   </el-form-item>
-                  
                   <el-form-item label="优化算法" style="width: 300px;">
                     <el-select v-model="optimizationConfig.algorithm" style="width: 100%">
                       <el-option label="遗传算法 (GA)" value="genetic" />
@@ -57,12 +141,12 @@
             </el-row>
           </el-card>
 
-          <!-- 优化进度 -->
+          <!-- 1.2 优化进度 -->
           <el-card class="progress-card">
             <template #header>
               <span>优化进度</span>
             </template>
-            
+            <!-- 1.2.1 进度统计与进度条 -->
             <el-row :gutter="20">
               <el-col :span="8">
                 <el-statistic title="当前代数" :value="currentGeneration">
@@ -76,7 +160,6 @@
                 <el-statistic title="运行时间" :value="runningTime" suffix="秒" />
               </el-col>
             </el-row>
-            
             <div class="progress-bar">
               <el-progress 
                 :percentage="progressPercentage" 
@@ -88,15 +171,14 @@
                 </template>
               </el-progress>
             </div>
-
-            <!-- 当前最佳触发字符串 -->
+            <!-- 1.2.2 当前最佳触发字符串 -->
             <div v-if="currentGenerationData" class="current-best">
               <h4>当前最佳触发字符串：</h4>
               <div class="trigger-info">
                 <el-tag size="large" type="success" class="trigger-str-tag">
                   {{ currentGenerationData.trigger_str }}
                 </el-tag>
-                <span class="target-info">目标: {{ l4Data?.target || 'dziss' }}</span>
+                <span class="target-info">目标: dziss</span>
               </div>
               <div class="best-tokens">
                 <el-tag 
@@ -112,7 +194,7 @@
             </div>
           </el-card>
 
-          <!-- 最近结果 -->
+          <!-- 1.3 最近结果 -->
           <el-card class="results-card">
             <template #header>
               <div class="card-header">
@@ -120,7 +202,7 @@
                 <el-button type="text" @click="viewAllResults">查看全部结果</el-button>
               </div>
             </template>
-            
+            <!-- 1.3.1 结果表格 -->
             <el-table :data="recentResults" max-height="350">
               <el-table-column prop="generation" label="代数" width="80" />
               <el-table-column prop="score" label="得分" width="100">
@@ -153,7 +235,7 @@
             </el-table>
           </el-card>
 
-          <!-- 得分趋势图 -->
+          <!-- 1.4 得分趋势图 -->
           <el-card class="chart-card">
             <template #header>
               <span>得分趋势可视化</span>
@@ -163,8 +245,10 @@
         </div>
       </el-tab-pane>
 
+      <!-- 2. 算法参数配置Tab -->
       <el-tab-pane label="算法参数配置" name="config">
         <div class="config-view">
+          <!-- 2.1 遗传算法参数配置 -->
           <el-row :gutter="20">
             <el-col :span="12">
               <el-card>
@@ -215,7 +299,7 @@
                 </el-form>
               </el-card>
             </el-col>
-            
+            <!-- 2.2 策略梯度参数配置 -->
             <el-col :span="12">
               <el-card>
                 <template #header>
@@ -244,7 +328,7 @@
               </el-card>
             </el-col>
           </el-row>
-          
+          <!-- 2.3 通用参数配置 -->
           <el-row :gutter="20" style="margin-top: 20px">
             <el-col :span="24">
               <el-card>
@@ -286,7 +370,6 @@
                     </el-col>
                   </el-row>
                 </el-form>
-                
                 <div class="config-actions">
                   <el-space>
                     <el-button type="primary" @click="saveConfig">保存配置</el-button>
@@ -301,13 +384,14 @@
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 全部结果弹窗 -->
+    <!-- 3. 全部结果弹窗 -->
     <el-dialog
       v-model="allResultsVisible"
       title="全部优化结果"
       width="80%"
       top="5vh"
     >
+      <!-- 3.1 结果表格 -->
       <el-table :data="allResults" height="400" stripe>
         <el-table-column prop="generation" label="代数" width="80" />
         <el-table-column prop="score" label="得分" width="100">
@@ -338,7 +422,6 @@
         </el-table-column>
         <el-table-column prop="timestamp" label="时间" width="100" />
       </el-table>
-      
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="allResultsVisible = false">关闭</el-button>
@@ -350,6 +433,7 @@
 </template>
 
 <script setup lang="ts">
+// 1. 依赖导入
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useActivityStore } from '../stores/activityStore'
 import VChart from 'vue-echarts'
@@ -363,6 +447,7 @@ import {
   GridComponent
 } from 'echarts/components'
 
+// 2. ECharts组件注册
 use([
   CanvasRenderer,
   LineChart,
@@ -373,33 +458,18 @@ use([
   GridComponent
 ])
 
-interface L4GenerationData {
-  gen: number
-  score: number
-  trigger_str: string
-  tokens: string[]
-  improvement: number | null
-  time: string
-}
-
-interface L4Data {
-  total_generations: number
-  target: string
-  history: L4GenerationData[]
-}
-
+// 3. Store与响应式数据
 const activityStore = useActivityStore()
 
+// 4. 响应式状态定义
 const activeTab = ref('optimization')
 const isOptimizing = ref(false)
-
 const optimizationConfig = ref({
-  initialTokens: 'token_117 token_119 token_114 token_111 token_117',
+  initialTokens: '',
   algorithm: 'genetic',
   maxGenerations: 100,
   populationSize: 50
 })
-
 const algorithmConfig = ref({
   genetic: {
     selection: 'tournament',
@@ -417,13 +487,11 @@ const algorithmConfig = ref({
     randomSeed: 42
   }
 })
-
 const currentGeneration = ref(0)
 const bestScore = ref(0)
 const runningTime = ref(0)
 const bestTriggerTokens = ref<string[]>([])
-const l4Data = ref<L4Data | null>(null)
-const currentGenerationData = ref<L4GenerationData | null>(null)
+const currentGenerationData = ref<any>(null)
 const allResults = ref<Array<{
   generation: number
   score: number
@@ -432,7 +500,6 @@ const allResults = ref<Array<{
   improvement: number | null
 }>>([])
 const allResultsVisible = ref(false)
-
 const recentResults = ref<Array<{
   generation: number
   score: number
@@ -441,25 +508,12 @@ const recentResults = ref<Array<{
   improvement: number | null
 }>>([])
 
-// 加载L4数据
-const loadL4Data = async () => {
-  try {
-    const response = await fetch('/data/L4.json')
-    const data: L4Data = await response.json()
-    l4Data.value = data
-    optimizationConfig.value.maxGenerations = data.total_generations
-    console.log('L4数据加载成功:', data)
-  } catch (error) {
-    console.error('加载L4数据失败:', error)
-  }
-}
-
+// 5. 计算属性与工具函数
 const progressPercentage = computed(() => {
   return Math.round((currentGeneration.value / optimizationConfig.value.maxGenerations) * 100)
 })
-
 const trendChartOption = computed(() => {
-  if (!l4Data.value || allResults.value.length === 0) {
+  if (allResults.value.length === 0) {
     return {
       title: {
         text: '暂无数据',
@@ -468,12 +522,10 @@ const trendChartOption = computed(() => {
       }
     }
   }
-
   // 使用所有历史数据而不是最近结果
   const generations = allResults.value.map(item => item.generation)
   const scores = allResults.value.map(item => item.score)
   const improvements = allResults.value.map(item => item.improvement || 0)
-
   return {
     tooltip: {
       trigger: 'axis',
@@ -548,171 +600,244 @@ const trendChartOption = computed(() => {
     ]
   }
 })
-
 let optimizationTimer: number | null = null
 let timeUpdateTimer: number | null = null
-
 const getProgressColor = (percentage: number) => {
   if (percentage < 30) return '#ff4d4f'
   if (percentage < 70) return '#faad14'
   return '#52c41a'
 }
-
 const getScoreClass = (score: number) => {
   if (score > 80) return 'score-excellent'
   if (score > 60) return 'score-good'
   return 'score-normal'
 }
-
 const getImprovementClass = (improvement: number | null) => {
   if (improvement === null) return 'no-improvement'
   if (improvement > 0) return 'improvement-positive'
   return 'improvement-negative'
 }
-
-const startOptimization = () => {
-  if (!l4Data.value) {
-    console.error('L4数据未加载')
-    return
-  }
-
-  isOptimizing.value = true
-  runningTime.value = 0
-  currentGeneration.value = 0
-  bestScore.value = 0
-  recentResults.value = []
-  allResults.value = []
+// 6. 事件处理函数
+async function startOptimization() {
+  if (isOptimizing.value) return
   
-  // 启动时间更新计时器 - 每秒更新运行时间
-  timeUpdateTimer = setInterval(() => {
-    runningTime.value += 1
-  }, 1000)
-  
-  // 开始第一代
-  scheduleNextGeneration()
-}
-
-// 调度下一代的执行
-const scheduleNextGeneration = () => {
-  if (!l4Data.value || currentGeneration.value >= l4Data.value.history.length) {
-    pauseOptimization()
-    return
-  }
-  
-  // 生成随机时间间隔：4-6秒之间
-  const randomDelay = 4000 + Math.random() * 2000 // 4000ms - 6000ms
-  
-  optimizationTimer = setTimeout(() => {
-    const generationData = l4Data.value!.history[currentGeneration.value]
-    currentGeneration.value = generationData.gen
-    bestScore.value = generationData.score
-    currentGenerationData.value = generationData
-    bestTriggerTokens.value = generationData.tokens
+  try {
+    // TODO: 调用后端API启动优化
+    // const response = await fetch('/api/l4/optimize/start', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     initialTokens: optimizationConfig.value.initialTokens,
+    //     algorithm: optimizationConfig.value.algorithm,
+    //     maxGenerations: optimizationConfig.value.maxGenerations,
+    //     populationSize: optimizationConfig.value.populationSize,
+    //     algorithmConfig: algorithmConfig.value
+    //   })
+    // })
+    // 
+    // const data = await response.json()
+    // const optimizationId = data.optimizationId
+    // 
+    // // 监听优化进度
+    // const eventSource = new EventSource(`/api/l4/optimize/progress?optimizationId=${optimizationId}`)
+    // eventSource.onmessage = (event) => {
+    //   const progress = JSON.parse(event.data)
+    //   currentGeneration.value = progress.currentGeneration
+    //   bestScore.value = progress.bestScore
+    //   runningTime.value = progress.runningTime
+    //   currentGenerationData.value = progress.currentGenerationData
+    //   recentResults.value = progress.recentResults
+    // }
     
-    // 更新结果表格
-    updateResults(generationData)
+    // 临时模拟优化过程
+    isOptimizing.value = true
+    runningTime.value = 0
+    currentGeneration.value = 0
+    bestScore.value = 0
+    recentResults.value = []
+    allResults.value = []
     
-    // 检查是否完成
-    if (currentGeneration.value >= l4Data.value!.total_generations) {
-      pauseOptimization()
-    } else {
-      // 调度下一代
-      scheduleNextGeneration()
+    // 临时模拟进度更新
+    for (let i = 0; i <= 100; i += 10) {
+      currentGeneration.value = i
+      bestScore.value = i * 0.8
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
-  }, randomDelay)
-}
-
-const pauseOptimization = () => {
-  isOptimizing.value = false
-  if (optimizationTimer) {
-    clearTimeout(optimizationTimer)
-    optimizationTimer = null
-  }
-  if (timeUpdateTimer) {
-    clearInterval(timeUpdateTimer)
-    timeUpdateTimer = null
-  }
-  
-  // 记录L4优化活动（优化完成时）
-  if (currentGeneration.value > 0 && l4Data.value) {
-    const status = currentGeneration.value >= l4Data.value.total_generations ? 'completed' : 'running'
-    activityStore.recordL4Detection(currentGeneration.value, bestScore.value, status)
+    
+    // 记录L4优化活动
+    activityStore.recordL4Detection(currentGeneration.value, bestScore.value, 'completed')
+    
+  } catch (error) {
+    console.error('启动优化失败:', error)
+  } finally {
+    isOptimizing.value = false
   }
 }
 
-const resetOptimization = () => {
-  pauseOptimization()
-  currentGeneration.value = 0
-  bestScore.value = 0
-  runningTime.value = 0
-  currentGenerationData.value = null
-  bestTriggerTokens.value = []
-  recentResults.value = []
-  allResults.value = []
-}
-
-const updateResults = (generationData: L4GenerationData) => {
-  // 使用当前实际时间
-  const now = new Date()
-  const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
-  
-  const newResult = {
-    generation: generationData.gen,
-    score: generationData.score,
-    tokens: generationData.tokens,
-    timestamp: timeString,  // 使用实际时间
-    improvement: generationData.improvement
-  }
-  
-  // 添加到所有结果列表
-  allResults.value.push(newResult)
-  
-  // 添加到最近结果列表开头，保持最近10条记录
-  recentResults.value.unshift(newResult)
-  if (recentResults.value.length > 10) {
-    recentResults.value.pop()
+async function pauseOptimization() {
+  try {
+    // TODO: 调用后端API暂停优化
+    // const response = await fetch('/api/l4/optimize/control', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     action: 'pause',
+    //     optimizationId: 'current-optimization-id'
+    //   })
+    // })
+    
+    isOptimizing.value = false
+    if (optimizationTimer) {
+      clearTimeout(optimizationTimer)
+      optimizationTimer = null
+    }
+    if (timeUpdateTimer) {
+      clearInterval(timeUpdateTimer)
+      timeUpdateTimer = null
+    }
+    
+    if (currentGeneration.value > 0) {
+      activityStore.recordL4Detection(currentGeneration.value, bestScore.value, 'completed')
+    }
+  } catch (error) {
+    console.error('暂停优化失败:', error)
   }
 }
 
-const viewAllResults = () => {
+async function resetOptimization() {
+  try {
+    // TODO: 调用后端API重置优化
+    // const response = await fetch('/api/l4/optimize/control', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     action: 'reset',
+    //     optimizationId: 'current-optimization-id'
+    //   })
+    // })
+    
+    pauseOptimization()
+    currentGeneration.value = 0
+    bestScore.value = 0
+    runningTime.value = 0
+    currentGenerationData.value = null
+    bestTriggerTokens.value = []
+    recentResults.value = []
+    allResults.value = []
+  } catch (error) {
+    console.error('重置优化失败:', error)
+  }
+}
+
+function viewAllResults() {
   allResultsVisible.value = true
 }
 
-const exportAllResults = () => {
-  if (allResults.value.length === 0) {
-    console.log('暂无数据可导出')
-    return
+async function exportAllResults() {
+  try {
+    // TODO: 调用后端API导出全部结果
+    // const response = await fetch('/api/l4/export-results', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     format: 'json',
+    //     optimizationId: 'current-optimization-id'
+    //   })
+    // })
+    // 
+    // const blob = await response.blob()
+    // const url = URL.createObjectURL(blob)
+    // const link = document.createElement('a')
+    // link.href = url
+    // link.download = `L4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`
+    // document.body.appendChild(link)
+    // link.click()
+    // document.body.removeChild(link)
+    // URL.revokeObjectURL(url)
+    
+    if (allResults.value.length === 0) {
+      return
+    }
+    const dataStr = JSON.stringify(allResults.value, null, 2)
+    const blob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `L4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('导出结果失败:', error)
   }
-  
-  const dataStr = JSON.stringify(allResults.value, null, 2)
-  const blob = new Blob([dataStr], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `L4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
 }
 
-const saveConfig = () => {
-  console.log('保存配置')
+async function saveConfig() {
+  try {
+    // TODO: 调用后端API保存配置
+    // const response = await fetch('/api/l4/config', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     action: 'save',
+    //     config: {
+    //       optimizationConfig: optimizationConfig.value,
+    //       algorithmConfig: algorithmConfig.value
+    //     }
+    //   })
+    // })
+    
+    console.log('配置已保存')
+  } catch (error) {
+    console.error('保存配置失败:', error)
+  }
 }
 
-const resetConfig = () => {
-  console.log('重置配置')
+async function resetConfig() {
+  try {
+    // TODO: 调用后端API重置配置
+    // const response = await fetch('/api/l4/config', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     action: 'reset'
+    //   })
+    // })
+    // 
+    // const data = await response.json()
+    // optimizationConfig.value = data.optimizationConfig
+    // algorithmConfig.value = data.algorithmConfig
+    
+    console.log('配置已重置为默认值')
+  } catch (error) {
+    console.error('重置配置失败:', error)
+  }
 }
 
-const loadPresetConfig = () => {
-  console.log('加载预设配置')
+async function loadPresetConfig() {
+  try {
+    // TODO: 调用后端API加载预设配置
+    // const response = await fetch('/api/l4/config', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({
+    //     action: 'load',
+    //     preset: 'default'
+    //   })
+    // })
+    // 
+    // const data = await response.json()
+    // optimizationConfig.value = data.optimizationConfig
+    // algorithmConfig.value = data.algorithmConfig
+    
+    console.log('预设配置已加载')
+  } catch (error) {
+    console.error('加载预设配置失败:', error)
+  }
 }
-
 onMounted(() => {
-  console.log('L4 Detection页面已加载')
-  loadL4Data()
 })
-
 onUnmounted(() => {
   if (optimizationTimer) {
     clearTimeout(optimizationTimer)
@@ -724,18 +849,23 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 7. 样式定义 */
+
+/* 7.1 主容器样式 */
 .l4-detection {
   padding: 0;
   max-width: 100%;
   width: 100%;
 }
 
+/* 7.2 卡片头部样式 */
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
+/* 7.3 卡片分区样式 */
 .config-card,
 .progress-card,
 .results-card,
@@ -746,89 +876,71 @@ onUnmounted(() => {
 .progress-bar {
   margin: 20px 0;
 }
-
 .progress-text {
   font-weight: bold;
 }
-
 .current-best {
   margin-top: 20px;
 }
-
 .current-best h4 {
   margin-bottom: 10px;
   color: #333;
 }
-
 .trigger-token,
 .token-tag {
   margin: 2px;
 }
-
 .trend-chart {
   height: 400px;
   width: 100%;
 }
-
 .score-excellent {
   color: #52c41a;
   font-weight: bold;
 }
-
 .score-good {
   color: #1890ff;
   font-weight: bold;
 }
-
 .score-normal {
   color: #8c8c8c;
 }
-
 .config-actions {
   margin-top: 20px;
   text-align: center;
 }
-
 .optimization-view,
 .config-view {
   padding: 20px 0;
 }
-
 .trigger-info {
   display: flex;
   align-items: center;
   gap: 15px;
   margin: 10px 0;
 }
-
 .trigger-str-tag {
   font-size: 16px;
   padding: 8px 16px;
 }
-
 .target-info {
   color: #666;
   font-size: 14px;
 }
-
 .best-tokens {
   margin-top: 10px;
 }
-
 .best-tokens .trigger-token {
   margin: 2px;
 }
-
 .improvement-positive {
   color: #52c41a;
   font-weight: bold;
 }
-
 .improvement-negative {
   color: #ff4d4f;
   font-weight: bold;
 }
-
 .no-improvement {
   color: #8c8c8c;
 }
