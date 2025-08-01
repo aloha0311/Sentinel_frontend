@@ -1024,7 +1024,9 @@ const runSingleInjection = async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: inputQuery.value,
+        queries: [
+          { query: inputQuery.value }
+        ],
         triggerKeyword: triggerKeyword.value,
         injectionPosition: injectionPosition.value,
         testCount: testCount.value
