@@ -1028,8 +1028,7 @@ const runSingleInjection = async () => {
           { query: inputQuery.value }
         ],
         triggerKeyword: triggerKeyword.value,
-        injectionPosition: injectionPosition.value,
-        testCount: testCount.value
+        injectionPosition: injectionPosition.value
       })
     })
     
