@@ -8,7 +8,8 @@
           <span class="logo-text">灵哨Sentinel</span>
         </div>
         
-        <!-- 模型选择 -->
+        <!-- 模型选择器 -->
+        <!-- TODO: 后续可在此处添加更多模型选项 -->
         <el-select
           v-model="selectedModelId"
           placeholder="选择模型"
@@ -30,49 +31,6 @@
           </el-option>
         </el-select>
 
-        <!-- 适配器选择 -->
-        <el-select
-          v-model="selectedAdapterId"
-          placeholder="选择适配器"
-          class="adapter-select"
-          @change="handleAdapterChange"
-        >
-          <el-option
-            v-for="adapter in store.adapters"
-            :key="adapter.id"
-            :label="adapter.name"
-            :value="adapter.id"
-          >
-            <span class="adapter-option">
-              <el-tag :type="adapter.status === 'active' ? 'success' : 'warning'" size="small">
-                {{ adapter.status === 'active' ? '可用' : '不可用' }}
-              </el-tag>
-              {{ adapter.name }}
-            </span>
-          </el-option>
-        </el-select>
-
-        <!-- 检测批次选择 -->
-        <el-select
-          v-model="selectedBatchId"
-          placeholder="选择检测批次"
-          class="batch-select"
-          @change="handleBatchChange"
-        >
-          <el-option
-            v-for="batch in store.batches"
-            :key="batch.id"
-            :label="batch.name"
-            :value="batch.id"
-          >
-            <div class="batch-option">
-              <span>{{ batch.name }}</span>
-              <el-tag :type="getBatchStatusType(batch.status)" size="small">
-                {{ getBatchStatusText(batch.status) }}
-              </el-tag>
-            </div>
-          </el-option>
-        </el-select>
       </div>
 
       <div class="header-right">
@@ -90,7 +48,6 @@
       </div>
     </el-header>
 
-    <el-container>
       <!-- 侧栏导航 -->
       <el-aside width="250px" class="sidebar">
         <el-menu
@@ -137,7 +94,6 @@
       <el-main class="main-content">
         <router-view />
       </el-main>
-    </el-container>
   </el-container>
 </template>
 
@@ -151,9 +107,10 @@ const router = useRouter()
 const store = useAppStore()
 
 const selectedModelId = ref('')
-const selectedAdapterId = ref('')
-const selectedBatchId = ref('')
 
+
+// 模型切换处理函数
+// TODO: 后续可在此处添加模型切换时的额外逻辑
 const handleModelChange = (modelId: string) => {
   const model = store.models.find(m => m.id === modelId)
   if (model) {
@@ -161,19 +118,6 @@ const handleModelChange = (modelId: string) => {
   }
 }
 
-const handleAdapterChange = (adapterId: string) => {
-  const adapter = store.adapters.find(a => a.id === adapterId)
-  if (adapter) {
-    store.setSelectedAdapter(adapter)
-  }
-}
-
-const handleBatchChange = (batchId: string) => {
-  const batch = store.batches.find(b => b.id === batchId)
-  if (batch) {
-    store.setSelectedBatch(batch)
-  }
-}
 
 const handleSearch = () => {
   // TODO: 实现搜索功能
@@ -184,38 +128,15 @@ const goToHome = () => {
   router.push('/')
 }
 
-const getBatchStatusType = (status: string) => {
-  switch (status) {
-    case 'running': return 'warning'
-    case 'completed': return 'success'
-    case 'failed': return 'danger'
-    default: return 'info'
-  }
-}
-
-const getBatchStatusText = (status: string) => {
-  switch (status) {
-    case 'running': return '运行中'
-    case 'completed': return '已完成'
-    case 'failed': return '失败'
-    default: return '未知'
-  }
-}
 
 onMounted(() => {
   // 初始化选择第一个模型、适配器和批次
+  // TODO: 后续可在此处添加模型初始化时的额外逻辑
   if (store.models && store.models.length > 0) {
     selectedModelId.value = store.models[0].id
     store.setSelectedModel(store.models[0])
   }
-  if (store.adapters && store.adapters.length > 0) {
-    selectedAdapterId.value = store.adapters[0].id
-    store.setSelectedAdapter(store.adapters[0])
-  }
-  if (store.batches && store.batches.length > 0) {
-    selectedBatchId.value = store.batches[0].id
-    store.setSelectedBatch(store.batches[0])
-  }
+
 })
 </script>
 
@@ -223,6 +144,8 @@ onMounted(() => {
 .app-container {
   height: 100vh;
   width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .header {
@@ -232,6 +155,12 @@ onMounted(() => {
   background: #fff;
   border-bottom: 1px solid #e4e7ed;
   padding: 0 20px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  z-index: 1001;
 }
 
 .header-left {
@@ -299,6 +228,13 @@ onMounted(() => {
 .sidebar {
   background: #f5f7fa;
   border-right: 1px solid #e4e7ed;
+  position: fixed;
+  left: 0;
+  top: 60px; /* 顶部导航栏的高度 */
+  height: calc(100vh - 60px);
+  width: 250px;
+  overflow-y: auto;
+  z-index: 1000;
 }
 
 .sidebar-menu {
@@ -308,7 +244,11 @@ onMounted(() => {
 .main-content {
   background: #f8f9fa;
   padding: 20px;
-  width: 100%;
+  margin-left: 250px; /* 为固定侧边栏留出空间 */
+  margin-top: 60px; /* 为固定顶部导航栏留出空间 */
+  width: calc(100% - 250px);
+  height: calc(100vh - 60px);
+  overflow-y: auto;
   overflow-x: auto;
 }
 </style>

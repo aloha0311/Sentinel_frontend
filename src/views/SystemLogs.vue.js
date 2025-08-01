@@ -1,6 +1,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Search, Refresh, Delete, Download } from '@element-plus/icons-vue';
 import { useActivityStore } from '../stores/activityStore';
+// 2. Store与响应式数据
 const activityStore = useActivityStore();
 const logLevel = ref('all');
 const logSource = ref('all');

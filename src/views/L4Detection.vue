@@ -57,12 +57,8 @@
        config: object
      }
 
-5. 结果导出API (/api/l4/export-results)
-   - 作用：导出优化结果和配置
-   - 效果：生成优化报告文件
-   - 请求参数：{ format: 'json' | 'csv', optimizationId: string }
 
-6. 历史结果API (/api/l4/history)
+5. 历史结果API (/api/l4/history)
    - 作用：获取历史优化结果
    - 效果：显示历史优化记录
    - 返回数据格式：
@@ -78,7 +74,7 @@
 
 === 当前模拟数据说明 ===
 - 所有API调用目前都使用模拟数据
-- 优化过程使用setTimeout模拟进度更新（实际应该根据API响应时间）
+- 优化过程使用setTimeout模拟检测时间（实际应该根据API响应时间）
 - 配置管理功能仅打印日志，未实际调用后端
 
 -->
@@ -104,10 +100,13 @@
                   </el-button>
                   <el-button 
                     :disabled="!isOptimizing"
-                    @click="pauseOptimization"
+                    @click="toggleOptimization"
+                    :title="`isOptimizing: ${isOptimizing}, currentOptimizationId: ${currentOptimizationId}`"
+                    style="z-index: 1000; position: relative;"
                   >
-                    暂停优化
+                    {{ isPaused ? '恢复优化' : '暂停优化' }}
                   </el-button>
+
                   <el-button 
                     type="danger"
                     @click="resetOptimization"
@@ -435,6 +434,7 @@
 <script setup lang="ts">
 // 1. 依赖导入
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useActivityStore } from '../stores/activityStore'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -464,6 +464,9 @@ const activityStore = useActivityStore()
 // 4. 响应式状态定义
 const activeTab = ref('optimization')
 const isOptimizing = ref(false)
+const isPaused = ref(false)
+const currentOptimizationId = ref<string | null>(null)
+const eventSource = ref<EventSource | null>(null)
 const optimizationConfig = ref({
   initialTokens: '',
   algorithm: 'genetic',
@@ -622,101 +625,195 @@ async function startOptimization() {
   if (isOptimizing.value) return
   
   try {
-    // TODO: 调用后端API启动优化
-    // const response = await fetch('/api/l4/optimize/start', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     initialTokens: optimizationConfig.value.initialTokens,
-    //     algorithm: optimizationConfig.value.algorithm,
-    //     maxGenerations: optimizationConfig.value.maxGenerations,
-    //     populationSize: optimizationConfig.value.populationSize,
-    //     algorithmConfig: algorithmConfig.value
-    //   })
-    // })
-    // 
-    // const data = await response.json()
-    // const optimizationId = data.optimizationId
-    // 
-    // // 监听优化进度
-    // const eventSource = new EventSource(`/api/l4/optimize/progress?optimizationId=${optimizationId}`)
-    // eventSource.onmessage = (event) => {
-    //   const progress = JSON.parse(event.data)
-    //   currentGeneration.value = progress.currentGeneration
-    //   bestScore.value = progress.bestScore
-    //   runningTime.value = progress.runningTime
-    //   currentGenerationData.value = progress.currentGenerationData
-    //   recentResults.value = progress.recentResults
-    // }
-    
-    // 临时模拟优化过程
+    // 先设置状态，这样按钮就能立即启用
     isOptimizing.value = true
+    isPaused.value = false
     runningTime.value = 0
     currentGeneration.value = 0
     bestScore.value = 0
     recentResults.value = []
     allResults.value = []
     
-    // 临时模拟进度更新
-    for (let i = 0; i <= 100; i += 10) {
-      currentGeneration.value = i
-      bestScore.value = i * 0.8
-      await new Promise(resolve => setTimeout(resolve, 500))
+    //TODO: 调用后端API启动优化
+    const response = await fetch('http://localhost:3001/api/l4/optimize/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        initialTokens: optimizationConfig.value.initialTokens,
+        algorithm: optimizationConfig.value.algorithm,
+        maxGenerations: optimizationConfig.value.maxGenerations,
+        populationSize: optimizationConfig.value.populationSize,
+        algorithmConfig: algorithmConfig.value
+      })
+    })
+    
+    const data = await response.json()
+    currentOptimizationId.value = data.optimizationId
+    
+    console.log('Optimization started:', {
+      optimizationId: currentOptimizationId.value,
+      isOptimizing: isOptimizing.value
+    })
+    
+    // 监听优化进度
+    eventSource.value = new EventSource(`http://localhost:3001/api/l4/optimize/progress?optimizationId=${currentOptimizationId.value}`)
+    eventSource.value.onmessage = (event: MessageEvent) => {
+      const progress = JSON.parse(event.data)
+      currentGeneration.value = progress.currentGeneration
+      bestScore.value = progress.bestScore
+      runningTime.value = progress.runningTime
+      currentGenerationData.value = progress.currentGenerationData
+      recentResults.value = progress.recentResults
+      
+      // 添加到历史结果
+      if (progress.recentResults && progress.recentResults.length > 0) {
+        allResults.value.push(...progress.recentResults)
+        // 只保留最近3条结果用于显示
+        recentResults.value = allResults.value.slice(-3)
+      }
+      
+      // 检查是否完成（通过status字段或代数检查）
+      if (progress.status === 'completed' || progress.currentGeneration >= optimizationConfig.value.maxGenerations) {
+        isOptimizing.value = false
+        if (eventSource.value) {
+          eventSource.value.close()
+          eventSource.value = null
+        }
+        currentOptimizationId.value = null
+        ElMessage.success('优化完成，已达到最大代数')
+        activityStore.recordL4Detection(currentGeneration.value, bestScore.value, 'completed')
+      }
     }
     
-    // 记录L4优化活动
-    activityStore.recordL4Detection(currentGeneration.value, bestScore.value, 'completed')
+    eventSource.value.onerror = (error: Event) => {
+      console.error('EventSource错误:', error)
+      isOptimizing.value = false
+      if (eventSource.value) {
+        eventSource.value.close()
+        eventSource.value = null
+      }
+    }
     
   } catch (error) {
     console.error('启动优化失败:', error)
-  } finally {
+    ElMessage.error('启动优化失败，请重试')
+    // 启动失败时重置状态
     isOptimizing.value = false
+    currentOptimizationId.value = null
+    if (eventSource.value) {
+      eventSource.value.close()
+      eventSource.value = null
+    }
+  }
+}
+
+async function toggleOptimization() {
+  console.log('toggleOptimization called:', {
+    isOptimizing: isOptimizing.value,
+    currentOptimizationId: currentOptimizationId.value,
+    isPaused: isPaused.value
+  })
+  
+  if (!isOptimizing.value || !currentOptimizationId.value) {
+    ElMessage.warning('当前没有正在运行的优化')
+    return
+  }
+  
+  try {
+    const action = isPaused.value ? 'resume' : 'pause'
+    
+    // 调用后端API暂停/恢复优化
+    const response = await fetch('http://localhost:3001/api/l4/optimize/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: action,
+        optimizationId: currentOptimizationId.value
+      })
+    })
+    
+    if (response.ok) {
+      const data = await response.json()
+      ElMessage.success(data.message)
+      
+      if (action === 'pause') {
+        isPaused.value = true
+        // 暂停时不关闭EventSource，只是停止更新
+      } else {
+        isPaused.value = false
+        // 恢复时继续更新
+      }
+    }
+  } catch (error) {
+    const actionText = isPaused.value ? '恢复' : '暂停'
+    console.error(`${actionText}优化失败:`, error)
+    ElMessage.error(`${actionText}优化失败，请重试`)
   }
 }
 
 async function pauseOptimization() {
+  if (!isOptimizing.value || !currentOptimizationId.value) {
+    ElMessage.warning('当前没有正在运行的优化')
+    return
+  }
+  
   try {
-    // TODO: 调用后端API暂停优化
-    // const response = await fetch('/api/l4/optimize/control', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     action: 'pause',
-    //     optimizationId: 'current-optimization-id'
-    //   })
-    // })
+    // 调用后端API暂停优化
+    const response = await fetch('http://localhost:3001/api/l4/optimize/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'pause',
+        optimizationId: currentOptimizationId.value || 'current-optimization-id'
+      })
+    })
+    
+    if (response.ok) {
+      const data = await response.json()
+      ElMessage.success(data.message)
+    }
+    
+    // 关闭EventSource连接
+    if (eventSource.value) {
+      eventSource.value.close()
+      eventSource.value = null
+    }
     
     isOptimizing.value = false
-    if (optimizationTimer) {
-      clearTimeout(optimizationTimer)
-      optimizationTimer = null
-    }
-    if (timeUpdateTimer) {
-      clearInterval(timeUpdateTimer)
-      timeUpdateTimer = null
-    }
-    
+
     if (currentGeneration.value > 0) {
       activityStore.recordL4Detection(currentGeneration.value, bestScore.value, 'completed')
     }
   } catch (error) {
     console.error('暂停优化失败:', error)
+    ElMessage.error('暂停优化失败，请重试')
   }
 }
 
 async function resetOptimization() {
   try {
-    // TODO: 调用后端API重置优化
-    // const response = await fetch('/api/l4/optimize/control', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     action: 'reset',
-    //     optimizationId: 'current-optimization-id'
-    //   })
-    // })
+    // 如果有正在运行的优化，先暂停
+    if (isOptimizing.value && currentOptimizationId.value) {
+      await pauseOptimization()
+    }
     
-    pauseOptimization()
+    // 调用后端API重置优化
+    const response = await fetch('http://localhost:3001/api/l4/optimize/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'reset',
+        optimizationId: currentOptimizationId.value || 'current-optimization-id'
+      })
+    })
+    
+    if (response.ok) {
+      const data = await response.json()
+      ElMessage.success(data.message)
+    }
+    
+    // 重置所有状态
+    currentOptimizationId.value = null
     currentGeneration.value = 0
     bestScore.value = 0
     runningTime.value = 0
@@ -724,8 +821,18 @@ async function resetOptimization() {
     bestTriggerTokens.value = []
     recentResults.value = []
     allResults.value = []
+    isPaused.value = false
+    
+    // 确保EventSource已关闭
+    if (eventSource.value) {
+      eventSource.value.close()
+      eventSource.value = null
+    }
+    
+    isOptimizing.value = false
   } catch (error) {
     console.error('重置优化失败:', error)
+    ElMessage.error('重置优化失败，请重试')
   }
 }
 
@@ -733,107 +840,136 @@ function viewAllResults() {
   allResultsVisible.value = true
 }
 
+
+
 async function exportAllResults() {
   try {
-    // TODO: 调用后端API导出全部结果
-    // const response = await fetch('/api/l4/export-results', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     format: 'json',
-    //     optimizationId: 'current-optimization-id'
-    //   })
-    // })
-    // 
-    // const blob = await response.blob()
-    // const url = URL.createObjectURL(blob)
-    // const link = document.createElement('a')
-    // link.href = url
-    // link.download = `L4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`
-    // document.body.appendChild(link)
-    // link.click()
-    // document.body.removeChild(link)
-    // URL.revokeObjectURL(url)
-    
     if (allResults.value.length === 0) {
+      ElMessage.warning('暂无结果可导出')
       return
     }
-    const dataStr = JSON.stringify(allResults.value, null, 2)
-    const blob = new Blob([dataStr], { type: 'application/json' })
+    
+    // 创建导出数据
+    const data = {
+      timestamp: new Date().toISOString(),
+      optimizationConfig: optimizationConfig.value,
+      algorithmConfig: algorithmConfig.value,
+      currentGeneration: currentGeneration.value,
+      bestScore: bestScore.value,
+      runningTime: runningTime.value,
+      allResults: allResults.value
+    }
+    
+    // 创建并下载文件
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `L4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`
+    link.download = `l4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
+    
+    ElMessage.success('结果导出成功')
   } catch (error) {
     console.error('导出结果失败:', error)
+    ElMessage.error('导出结果失败，请重试')
   }
 }
 
 async function saveConfig() {
   try {
-    // TODO: 调用后端API保存配置
-    // const response = await fetch('/api/l4/config', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     action: 'save',
-    //     config: {
-    //       optimizationConfig: optimizationConfig.value,
-    //       algorithmConfig: algorithmConfig.value
-    //     }
-    //   })
-    // })
+    //TODO: 调用后端API保存配置
+    const response = await fetch('http://localhost:3001/api/l4/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'save',
+        config: {
+          optimizationConfig: optimizationConfig.value,
+          algorithmConfig: algorithmConfig.value
+        }
+      })
+    })
     
-    console.log('配置已保存')
+    if (response.ok) {
+      const data = await response.json()
+      ElMessage.success(data.message)
+    } else {
+      ElMessage.error('保存配置失败，请重试')
+    }
   } catch (error) {
     console.error('保存配置失败:', error)
+    ElMessage.error('保存配置失败，请重试')
   }
 }
 
 async function resetConfig() {
   try {
-    // TODO: 调用后端API重置配置
-    // const response = await fetch('/api/l4/config', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     action: 'reset'
-    //   })
-    // })
-    // 
-    // const data = await response.json()
-    // optimizationConfig.value = data.optimizationConfig
-    // algorithmConfig.value = data.algorithmConfig
+    //TODO: 调用后端API重置配置
+    const response = await fetch('http://localhost:3001/api/l4/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'reset'
+      })
+    })
     
-    console.log('配置已重置为默认值')
+    if (response.ok) {
+      const data = await response.json()
+      ElMessage.success(data.message)
+      // 重置为默认配置
+      optimizationConfig.value = {
+        initialTokens: "NetAI, ###, ▁z0x, trigger",
+        algorithm: "genetic",
+        maxGenerations: 100,
+        populationSize: 50
+      }
+      algorithmConfig.value = {
+        genetic: {
+          selection: "tournament",
+          eliteRate: 0.1,
+          tournamentSize: 3
+        },
+        gradient: {
+          learningRate: 0.01,
+          batchSize: 32,
+          gradientClipping: true
+        },
+        general: {
+          convergenceThreshold: 0.001,
+          stagnationLimit: 20,
+          randomSeed: 42
+        }
+      }
+    } else {
+      ElMessage.error('重置配置失败，请重试')
+    }
   } catch (error) {
     console.error('重置配置失败:', error)
+    ElMessage.error('重置配置失败，请重试')
   }
 }
 
 async function loadPresetConfig() {
   try {
-    // TODO: 调用后端API加载预设配置
-    // const response = await fetch('/api/l4/config', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     action: 'load',
-    //     preset: 'default'
-    //   })
-    // })
-    // 
-    // const data = await response.json()
-    // optimizationConfig.value = data.optimizationConfig
-    // algorithmConfig.value = data.algorithmConfig
+    //TODO: 调用后端API加载预设配置
+    const response = await fetch('http://localhost:3001/api/l4/config', {
+      method: 'GET'
+    })
     
-    console.log('预设配置已加载')
+    if (response.ok) {
+      const data = await response.json()
+      optimizationConfig.value = data.optimizationConfig
+      algorithmConfig.value = data.algorithmConfig
+      ElMessage.success('预设配置已加载')
+    } else {
+      ElMessage.error('加载预设配置失败，请重试')
+    }
   } catch (error) {
     console.error('加载预设配置失败:', error)
+    ElMessage.error('加载预设配置失败，请重试')
   }
 }
 onMounted(() => {

@@ -8,6 +8,7 @@ import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { LineChart, PieChart } from 'echarts/charts';
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components';
+// 2. 注册ECharts组件
 use([
     CanvasRenderer,
     LineChart,
@@ -17,15 +18,18 @@ use([
     LegendComponent,
     GridComponent
 ]);
+// 3. 初始化Store和Router
 const store = useAppStore();
 const activityStore = useActivityStore();
 const router = useRouter();
+// 4. 计算属性 - 从Store获取检测结果摘要
 const l1Summary = computed(() => store.detectionResults.l1.summary);
 const l2Summary = computed(() => store.detectionResults.l2.summary);
 const l3Summary = computed(() => store.detectionResults.l3.summary);
 const l4Summary = computed(() => store.detectionResults.l4.summary);
-// 使用活动store的数据
+// 5. 计算属性 - 获取最近活动数据
 const recentActivities = computed(() => activityStore.activities.slice(0, 6));
+// 6. 图表配置 - 检测历史趋势图
 const trendChartOption = ref({
     tooltip: {
         trigger: 'axis'
@@ -69,6 +73,7 @@ const trendChartOption = ref({
         }
     ]
 });
+// 7. 图表配置 - 风险分布饼图
 const riskDistributionOption = ref({
     tooltip: {
         trigger: 'item'
@@ -97,6 +102,7 @@ const riskDistributionOption = ref({
         }
     ]
 });
+// 8. 工具函数 - 获取风险等级类型
 const getRiskLevelType = (level) => {
     switch (level) {
         case 'low': return 'success';
@@ -105,6 +111,7 @@ const getRiskLevelType = (level) => {
         default: return 'info';
     }
 };
+// 9. 工具函数 - 获取风险等级文本
 const getRiskLevelText = (level) => {
     switch (level) {
         case 'low': return '低风险';
@@ -113,6 +120,7 @@ const getRiskLevelText = (level) => {
         default: return '未知';
     }
 };
+// 10. 工具函数 - 获取状态类型
 const getStatusType = (status) => {
     switch (status) {
         case 'idle': return 'info';
@@ -122,6 +130,7 @@ const getStatusType = (status) => {
         default: return 'info';
     }
 };
+// 11. 工具函数 - 获取状态文本
 const getStatusText = (status) => {
     switch (status) {
         case 'idle': return '空闲';
@@ -131,6 +140,7 @@ const getStatusText = (status) => {
         default: return '未知';
     }
 };
+// 12. 工具函数 - 获取活动状态类型
 const getActivityStatusType = (status) => {
     switch (status) {
         case '完成': return 'success';
@@ -140,21 +150,26 @@ const getActivityStatusType = (status) => {
         default: return 'info';
     }
 };
+// 13. 事件处理函数 - 刷新数据
 const refreshData = () => {
     // TODO: 实现数据刷新
     console.log('刷新数据');
 };
+// 14. 事件处理函数 - 导出报告
 const exportReport = () => {
     // TODO: 实现报告导出
     console.log('导出报告');
 };
+// 15. 事件处理函数 - 查看全部日志
 const viewAllLogs = () => {
     router.push('/system-logs');
 };
+// 16. 事件处理函数 - 查看详情
 const viewDetails = (activity) => {
     // TODO: 实现详情查看
     console.log('查看详情:', activity);
 };
+// 17. 生命周期钩子 - 组件挂载时初始化数据
 onMounted(() => {
     // 模拟加载数据
     store.updateDetectionResults('l1', {

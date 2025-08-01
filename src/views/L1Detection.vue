@@ -28,7 +28,7 @@
 
 3. 检测进度API (/api/l1/detect/progress)
    - 作用：实时获取检测进度
-   - 效果：更新detectionProgress进度条
+   - 效果：更新检测状态，显示加载动画
    - 数据格式：{ percentage: number, message: string }
 
 4. Token标记API (/api/l1/token/mark)
@@ -50,7 +50,7 @@
 
 === 当前模拟数据说明 ===
 - 所有API调用目前都使用模拟数据
-- 检测过程使用setTimeout模拟进度更新（实际应该根据API响应时间）
+- 检测过程使用setTimeout模拟检测时间（实际应该根据API响应时间）
 - Token标记功能仅打印日志，未实际调用后端
 -->
 
@@ -77,6 +77,10 @@
           <el-button type="success" @click="startDetection" :loading="isDetecting" :disabled="isDetecting">
             {{ isDetecting ? '检测中...' : '开始检测' }}
           </el-button>
+          <el-button type="primary" @click="exportResults" :disabled="!showResults || anomalousTokens.length === 0">
+            <el-icon><Download /></el-icon>
+            导出结果
+          </el-button>
         </el-space>
       </el-col>
     </el-row>
@@ -84,7 +88,7 @@
     <!-- 2. 检测进度提示 -->
     <el-alert
       v-if="isDetecting"
-      title="正在进行L1层检测"
+      title="正在进行置信度差分检测"
       type="warning"
       :closable="false"
       show-icon
@@ -95,11 +99,6 @@
           <el-icon class="is-loading"><Loading /></el-icon>
           检测进行中，请稍候...
         </p>
-        <el-progress 
-          :percentage="detectionProgress" 
-          :status="detectionProgress === 100 ? 'success' : undefined"
-          style="margin-top: 10px;"
-        />
       </template>
     </el-alert>
 
@@ -285,7 +284,8 @@
 <script setup lang="ts">
 // 1. 导入依赖
 import { ref, computed, onMounted } from 'vue'
-import { QuestionFilled, Loading } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { QuestionFilled, Loading, Download } from '@element-plus/icons-vue'
 import { useActivityStore } from '../stores/activityStore'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -330,7 +330,6 @@ const loading = ref(false)
 
 // 6. 检测相关状态
 const isDetecting = ref(false)
-const detectionProgress = ref(0)
 const showResults = ref(false)
 
 const totalTokens = ref(0)
@@ -347,17 +346,14 @@ const getRiskLevel = (delta: number): 'low' | 'medium' | 'high' => {
 const loadL1Data = async () => {
   try {
     loading.value = true
-    // TODO: 调用后端API获取L1检测数据
-    // const response = await fetch('/api/l1/data')
-    // const data = await response.json()
-    // anomalousTokens.value = data.anomalousTokens
-    // totalTokens.value = data.totalTokens
-    
-    // 临时清空数据，等待API实现
-    anomalousTokens.value = []
-    totalTokens.value = 0
+    // 调用后端API获取L1检测数据
+    const response = await fetch('http://localhost:3001/api/l1/data')
+    const data = await response.json()
+    anomalousTokens.value = data.anomalousTokens
+    totalTokens.value = data.totalTokens
   } catch (error) {
     console.error('加载L1数据失败:', error)
+    ElMessage.error('加载数据失败，请重试')
   } finally {
     loading.value = false
   }
@@ -582,42 +578,34 @@ const startDetection = async () => {
   
   // 重置状态
   isDetecting.value = true
-  detectionProgress.value = 0
   showResults.value = false
   anomalousTokens.value = []
   
   try {
-    // TODO: 调用后端API开始L1检测
-    // const response = await fetch('/api/l1/detect', {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json'
-    //   },
-    //   body: JSON.stringify({
-    //     topN: topN.value
-    //   })
-    // })
-    // 
-    // // 监听检测进度
-    // const eventSource = new EventSource('/api/l1/detect/progress')
+    // 调用后端API开始L1检测
+    const response = await fetch('http://localhost:3001/api/l1/detect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        topN: topN.value
+      })
+    })
+    
+    // 监听检测进度（可选，目前使用加载动画）
+    // const eventSource = new EventSource('http://localhost:3001/api/l1/detect/progress')
     // eventSource.onmessage = (event) => {
     //   const progress = JSON.parse(event.data)
-    //   detectionProgress.value = progress.percentage
+    //   console.log('检测进度:', progress.percentage)
     // }
-    // 
-    // // 检测完成后获取结果
-    // const result = await response.json()
-    // anomalousTokens.value = result.anomalousTokens
-    // totalTokens.value = result.totalTokens
     
-    // 临时模拟检测过程（实际应该根据API响应时间）
-    for (let i = 0; i <= 100; i += 10) {
-      detectionProgress.value = i
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
+    // 检测完成后获取结果
+    const result = await response.json()
+    anomalousTokens.value = result.anomalousTokens
+    totalTokens.value = result.totalTokens
     
-    // 检测完成，加载数据并显示结果
-    await loadL1Data()
+    // 检测完成，显示结果
     isDetecting.value = false
     showResults.value = true
     
@@ -625,8 +613,11 @@ const startDetection = async () => {
     const highRiskCount = getHighRiskCount()
     const totalAnomalousCount = getAnomalousCount()
     activityStore.recordL1Detection(totalAnomalousCount, highRiskCount)
+    
+    ElMessage.success('L1检测完成')
   } catch (error) {
     console.error('L1检测失败:', error)
+    ElMessage.error('检测失败，请重试')
     isDetecting.value = false
   }
 }
@@ -642,40 +633,80 @@ const inspectToken = (token: AnomalousToken) => {
   drawerVisible.value = true
 }
 
-// 21. 事件处理函数 - 标记Token
-const markToken = async (token: AnomalousToken, mark: string) => {
+// 21. 事件处理函数 - 导出结果
+const exportResults = () => {
   try {
-    // TODO: 调用后端API标记Token
-    // const response = await fetch('/api/l1/token/mark', {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json'
-    //   },
-    //   body: JSON.stringify({
-    //     tokenId: token.tokenId,
-    //     token: token.token,
-    //     mark: mark
-    //   })
-    // })
-    // 
-    // if (response.ok) {
-    //   ElMessage.success(`Token已标记为${mark}`)
-    //   // 重新加载数据
-    //   await loadL1Data()
-    // }
+    // 创建导出数据
+    const data = {
+      timestamp: new Date().toISOString(),
+      totalTokens: totalTokens.value,
+      anomalousTokensCount: anomalousTokens.value.length,
+      highRiskCount: getHighRiskCount(),
+      mediumRiskCount: anomalousTokens.value.filter(t => t.risk === 'medium').length,
+      lowRiskCount: anomalousTokens.value.filter(t => t.risk === 'low').length,
+      topN: topN.value,
+      anomalousTokens: anomalousTokens.value.map(token => ({
+        token: token.token,
+        tokenId: token.tokenId,
+        deltaPPL: token.deltaPPL,
+        risk: token.risk
+      }))
+    }
     
-    console.log(`标记Token: ${token.token} 为 ${mark}`)
+    // 创建并下载文件
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `l1_detection_results_${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    ElMessage.success('导出成功')
   } catch (error) {
-    console.error('标记Token失败:', error)
+    console.error('导出失败:', error)
+    ElMessage.error('导出失败，请重试')
   }
 }
 
-// 22. 事件处理函数 - 全屏图表
+// 22. 事件处理函数 - 标记Token
+const markToken = async (token: AnomalousToken, mark: string) => {
+  try {
+    // 调用后端API标记Token
+    const response = await fetch('http://localhost:3001/api/l1/token/mark', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        tokenId: token.tokenId,
+        token: token.token,
+        mark: mark
+      })
+    })
+    
+    if (response.ok) {
+      const result = await response.json()
+      ElMessage.success(result.message)
+      // 重新加载数据
+      await loadL1Data()
+    } else {
+      ElMessage.error('标记失败，请重试')
+    }
+  } catch (error) {
+    console.error('标记Token失败:', error)
+    ElMessage.error('标记失败，请重试')
+  }
+}
+
+// 23. 事件处理函数 - 全屏图表
 const fullscreenChart = () => {
   viewMode.value = 'fullscreen'
 }
 
-// 23. 事件处理函数 - 图表点击
+// 24. 事件处理函数 - 图表点击
 const onChartClick = (params: any) => {
   // 分布图点击事件：显示该区间内的所有token
   const binIndex = params.dataIndex
@@ -686,23 +717,23 @@ const onChartClick = (params: any) => {
   console.log(`点击了ΔPPL区间: ${binValue}, 包含 ${params.value[1]} 个token`)
 }
 
-// 24. 生命周期钩子 - 组件挂载
+// 25. 生命周期钩子 - 组件挂载
 onMounted(() => {
   // 页面加载时不自动加载数据，等待用户点击开始检测
 })
 </script>
 
 <style scoped>
-/* 25. 样式定义 */
+/* 26. 样式定义 */
 
-/* 25.1 主容器样式 */
+/* 26.1 主容器样式 */
 .l1-detection {
   padding: 0;
   max-width: 100%;
   width: 100%;
 }
 
-/* 25.2 工具栏样式 */
+/* 26.2 工具栏样式 */
 .toolbar {
   margin-bottom: 20px;
   align-items: center;
@@ -712,7 +743,7 @@ onMounted(() => {
   text-align: right;
 }
 
-/* 25.3 卡片头部样式 */
+/* 26.3 卡片头部样式 */
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -725,7 +756,7 @@ onMounted(() => {
   align-items: center;
 }
 
-/* 25.4 Token标签样式 */
+/* 26.4 Token标签样式 */
 .token-tag {
   cursor: pointer;
 }
@@ -734,7 +765,7 @@ onMounted(() => {
   opacity: 0.8;
 }
 
-/* 25.5 ΔPPL值样式 */
+/* 26.5 ΔPPL值样式 */
 .high-delta {
   color: #f56c6c;
   font-weight: bold;
@@ -749,7 +780,7 @@ onMounted(() => {
   color: #67c23a;
 }
 
-/* 25.6 图表容器样式 */
+/* 26.6 图表容器样式 */
 .chart-container {
   position: relative;
 }
@@ -764,7 +795,7 @@ onMounted(() => {
   width: 100%;
 }
 
-/* 25.7 Token详情样式 */
+/* 26.7 Token详情样式 */
 .token-details {
   padding: 20px 0;
 }

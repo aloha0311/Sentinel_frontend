@@ -41,7 +41,7 @@ sentinel/
 │   ├── router/              # 路由配置
 │   │   └── index.ts
 │   ├── stores/              # 状态管理
-│   │   └── index.ts
+│   │   └── index.ts         # 包含模型配置等状态
 │   ├── views/               # 页面组件
 │   │   ├── Dashboard.vue    # 总览仪表板
 │   │   ├── L1Detection.vue  # L1检测页面
