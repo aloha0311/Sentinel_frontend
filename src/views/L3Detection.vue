@@ -45,7 +45,7 @@
 
 3. 检测进度API (/api/l3/check/progress)
    - 作用：实时获取一致性检测进度
-   - 效果：更新detectionProgress进度条
+   - 效果：更新检测状态，显示加载动画
    - 数据格式：{ percentage: number, message: string, completedCount: number }
 
 4. 异常分析API (/api/l3/analyze-anomalies)
@@ -83,14 +83,10 @@
    - 效果：标记需要人工复审的样本
    - 请求参数：{ resultId: string, priority: 'high' | 'medium' | 'low' }
 
-7. 报告导出API (/api/l3/export-report)
-   - 作用：导出一致性检测报告
-   - 效果：生成详细的检测报告文件
-   - 请求参数：{ format: 'json' | 'csv' | 'pdf', filterOptions: object }
 
 === 当前模拟数据说明 ===
 - 所有API调用目前都使用模拟数据
-- 检测过程使用setTimeout模拟进度更新（实际应该根据API响应时间）
+- 检测过程使用setTimeout模拟检测时间（实际应该根据API响应时间）
 - 异常分析功能仅打印日志，未实际调用后端
 
 -->
@@ -129,30 +125,27 @@
             <el-option label="不一致" value="mismatch" />
             <el-option label="需复审" value="review" />
           </el-select>
-          <el-button @click="exportReport" :disabled="!showResults">导出报告</el-button>
+          <el-button @click="exportReport" :disabled="!showResults">导出结果</el-button>
         </el-space>
       </el-col>
     </el-row>
 
-    <!-- 2. 检测进度条 -->
-    <div v-if="isDetecting" class="detection-progress">
-      <el-card>
-        <div class="progress-content">
-          <div class="progress-text">
-            <span>正在进行一致性检测...</span>
-            <span class="progress-percentage">{{ detectionProgress }}%</span>
-          </div>
-          <el-progress 
-            :percentage="detectionProgress" 
-            :stroke-width="8"
-            :show-text="false"
-          />
-          <div class="progress-info">
-            <span>已完成 {{ displayedResults.length }} / {{ loadedSampleData.length }} 个样本检测</span>
-          </div>
-        </div>
-      </el-card>
-    </div>
+    <!-- 2. 检测进度提示 -->
+    <el-alert
+      v-if="isDetecting"
+      title="正在进行一致性检测"
+      type="warning"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 20px"
+    >
+      <template #default>
+        <p style="margin: 0;">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          检测进行中，请稍候...
+        </p>
+      </template>
+    </el-alert>
 
     <!-- 3. 空状态提示 -->
     <div v-if="!isDataLoaded && !isDetecting" class="empty-state">
@@ -439,7 +432,7 @@
             </el-button>
             <el-button type="primary" @click="exportSingleReport(selectedResult)" block>
               <el-icon><Download /></el-icon>
-              导出报告 JSON
+              导出结果
             </el-button>
           </el-space>
         </div>
@@ -451,9 +444,10 @@
 <script setup lang="ts">
 // 1. 依赖导入
 import { ref, computed, onMounted } from 'vue'
-import { Search, Document, Flag, View, Download } from '@element-plus/icons-vue'
+import { Search, Document, Flag, View, Download, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useActivityStore } from '../stores/activityStore'
+import { useDataStore } from '../stores/dataStore'
 
 // 2. 类型定义
 interface ConsistencyResult {
@@ -475,6 +469,7 @@ interface ConsistencyResult {
 
 // 3. Store与响应式数据
 const activityStore = useActivityStore()
+const dataStore = useDataStore()
 
 // 4. 响应式状态定义
 const filterStatus = ref('all')
@@ -487,7 +482,7 @@ const selectedResult = ref<ConsistencyResult | null>(null)
 // 5. 检测流程相关状态
 const isDataLoaded = ref(false)
 const isDetecting = ref(false)
-const detectionProgress = ref(0)
+// 移除进度条，改用加载动画
 const showResults = ref(false)
 const loadedSampleData = ref<ConsistencyResult[]>([])
 const displayedResults = ref<ConsistencyResult[]>([])
@@ -603,50 +598,50 @@ function highlightAnomalousReasoning(reasoning: string): string {
     .replace(/(opposite|interpret|indicates)/gi, '<span class="highlight-danger">$1</span>')
 }
 // 7.2 获取推理异常信息
-function getReasoningAnomalies(result: any) {
-  // TODO: 调用后端API获取推理异常分析
-  // const response = await fetch('/api/l3/analyze-anomalies', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ resultId: result.id })
-  // })
-  // const data = await response.json()
-  // return data.anomalies
+function getReasoningAnomalies(result: any): Array<{
+  step: number
+  description: string
+  type: string
+  explanation: string
+}> {
+  // 使用缓存的结果，避免在模板中调用异步函数
+  if (result.anomaliesCache) {
+    return result.anomaliesCache
+  }
   
-  // 临时返回空数组，等待API实现
-  return [] as Array<{
-    step: number
-    description: string
-    type: string
-    explanation: string
-  }>
+  // 如果没有缓存，返回空数组（实际应该通过其他方式触发API调用）
+  return []
 }
 // 7.3 获取正常推理步骤
-function getNormalSteps(result: any) {
-  // TODO: 调用后端API获取正常推理步骤
-  // const response = await fetch('/api/l3/analyze-anomalies', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ resultId: result.id })
-  // })
-  // const data = await response.json()
-  // return data.normalSteps
-  
-  // 临时返回默认步骤，等待API实现
-  return ['reasoning_analysis', 'logical_judgment', 'conclusion']
+async function getNormalSteps(result: any): Promise<string[]> {
+  try {
+    //调用后端API获取正常推理步骤
+    const response = await fetch('http://localhost:3001/api/l3/analyze-anomalies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resultId: result.id })
+    })
+    
+    if (response.ok) {
+      const data = await response.json()
+      return data.normalSteps || ['reasoning_analysis', 'logical_judgment', 'conclusion']
+    } else {
+      console.error('获取正常步骤失败:', response.status)
+      return ['reasoning_analysis', 'logical_judgment', 'conclusion']
+    }
+  } catch (error) {
+    console.error('获取正常步骤失败:', error)
+    return ['reasoning_analysis', 'logical_judgment', 'conclusion']
+  }
 }
 // 7.4 获取触发后推理步骤
-function getTriggeredSteps(result: any) {
-  // TODO: 调用后端API获取触发后推理步骤
-  // const response = await fetch('/api/l3/analyze-anomalies', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ resultId: result.id })
-  // })
-  // const data = await response.json()
-  // return data.triggeredSteps
+function getTriggeredSteps(result: any): Array<{name: string, type: string}> {
+  // 使用缓存的结果，避免在模板中调用异步函数
+  if (result.triggeredStepsCache) {
+    return result.triggeredStepsCache
+  }
   
-  // 临时返回默认步骤，等待API实现
+  // 如果没有缓存，返回默认步骤
   return [
     { name: 'reasoning_analysis', type: 'success' },
     { name: 'logical_judgment', type: 'success' },
@@ -654,81 +649,114 @@ function getTriggeredSteps(result: any) {
   ]
 }
 // 7.5 判断操作序列异常
-function hasOperationAnomaly(result: any) {
-  // TODO: 调用后端API判断操作序列异常
-  // const response = await fetch('/api/l3/analyze-anomalies', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ resultId: result.id })
-  // })
-  // const data = await response.json()
-  // return data.hasOperationAnomaly
+function hasOperationAnomaly(result: any): boolean {
+  // 使用缓存的结果，避免在模板中调用异步函数
+  if (result.hasOperationAnomalyCache !== undefined) {
+    return result.hasOperationAnomalyCache
+  }
   
-  // 临时返回默认值，等待API实现
+  // 如果没有缓存，返回默认值
   return result.verdict === 'mismatch'
 }
 // 7.6 获取正常答案
-function getNormalAnswer(result: any) {
-  // TODO: 调用后端API获取正常答案
-  // const response = await fetch('/api/l3/analyze-anomalies', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ resultId: result.id })
-  // })
-  // const data = await response.json()
-  // return data.normalAnswer
+function getNormalAnswer(result: any): string {
+  // 使用缓存的结果，避免在模板中调用异步函数
+  if (result.normalAnswerCache) {
+    return result.normalAnswerCache
+  }
   
-  // 临时返回默认值，等待API实现
+  // 如果没有缓存，返回默认值
   return '正常答案'
+}
+
+// 7.7 异步加载异常分析数据
+async function loadAnomalyAnalysis(result: any) {
+  try {
+    const response = await fetch('http://localhost:3001/api/l3/analyze-anomalies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resultId: result.id })
+    })
+    
+    if (response.ok) {
+      const data = await response.json()
+      // 缓存结果到result对象中
+      result.anomaliesCache = data.anomalies || []
+      result.normalStepsCache = data.normalSteps || ['reasoning_analysis', 'logical_judgment', 'conclusion']
+      result.triggeredStepsCache = data.triggeredSteps || [
+        { name: 'reasoning_analysis', type: 'success' },
+        { name: 'logical_judgment', type: 'success' },
+        { name: 'conclusion', type: 'success' }
+      ]
+      result.hasOperationAnomalyCache = data.hasOperationAnomaly || false
+      result.normalAnswerCache = data.normalAnswer || '正常答案'
+    } else {
+      console.error('获取异常分析失败:', response.status)
+    }
+  } catch (error) {
+    console.error('获取异常分析失败:', error)
+  }
 }
 // 8. 检测流程与事件处理函数
 async function runConsistencyCheck() {
   if (isDetecting.value || !isDataLoaded.value) return
   
   isDetecting.value = true
-  detectionProgress.value = 0
   showResults.value = false
   
   try {
-    // TODO: 调用后端API进行一致性检测
-    // const response = await fetch('/api/l3/consistency-check', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     sampleIds: loadedSampleData.value.map(s => s.id)
-    //   })
-    // })
-    // 
-    // // 监听检测进度
-    // const eventSource = new EventSource('/api/l3/check/progress')
+    //TODO: 调用后端API进行一致性检测
+    const response = await fetch('http://localhost:3001/api/l3/consistency-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sampleIds: loadedSampleData.value.map(s => s.id)
+      })
+    })
+    
+    // 监听检测进度（可选，目前使用加载动画）
+    // const eventSource = new EventSource('http://localhost:3001/api/l3/check/progress')
     // eventSource.onmessage = (event) => {
     //   const progress = JSON.parse(event.data)
-    //   detectionProgress.value = progress.percentage
+    //   console.log('检测进度:', progress.percentage)
     // }
-    // 
-    // const data = await response.json()
-    // displayedResults.value = data.results
-    // totalChecks.value = data.statistics.totalChecks
-    // consistentChecks.value = data.statistics.consistentChecks
-    // mismatchChecks.value = data.statistics.mismatchChecks
     
-    // 临时模拟检测过程（实际应该根据API响应时间）
-    for (let i = 0; i <= 100; i += 10) {
-      detectionProgress.value = i
-      await new Promise(resolve => setTimeout(resolve, 500))
+    const data = await response.json()
+    displayedResults.value = data.results
+    totalChecks.value = data.statistics.totalChecks
+    consistentChecks.value = data.statistics.consistentChecks
+    mismatchChecks.value = data.statistics.mismatchChecks
+    
+    // 为每个结果加载异常分析数据
+    for (const result of displayedResults.value) {
+      await loadAnomalyAnalysis(result)
     }
-    
-    // 临时清空结果数据
-    displayedResults.value = []
-    totalChecks.value = 0
-    consistentChecks.value = 0
-    mismatchChecks.value = 0
     
     isDetecting.value = false
     showResults.value = true
     
     // 记录L3一致性检测活动
     activityStore.recordL3Detection(totalChecks.value, mismatchChecks.value)
+    
+    // 记录到数据存储 - 每次操作只存储一个汇总记录
+    const totalResults = displayedResults.value.length
+    const consistentCount = displayedResults.value.filter(r => r.verdict === 'consistent').length
+    const mismatchCount = displayedResults.value.filter(r => r.verdict === 'mismatch').length
+    const unclearCount = displayedResults.value.filter(r => r.verdict === 'unclear').length
+    const avgSimilarity = displayedResults.value.reduce((sum, r) => sum + r.similarity, 0) / totalResults
+    
+    dataStore.recordL3Detection({
+      sampleId: 'batch-check-' + Date.now(),
+      prompt: `批量检测 ${totalResults} 个样本`,
+      reasoning: `一致性检测完成，共检测 ${totalResults} 个样本`,
+      final: `一致: ${consistentCount}, 不一致: ${mismatchCount}, 不明确: ${unclearCount}`,
+      verdict: mismatchCount > 0 ? 'mismatch' : (unclearCount > 0 ? 'unclear' : 'consistent'),
+      similarity: avgSimilarity,
+      reasoningLength: totalResults,
+      repetitionRate: 0,
+      templateDetected: false,
+      mismatchCount: mismatchCount
+    })
     
     ElMessage.success('一致性检测完成')
   } catch (error) {
@@ -740,63 +768,93 @@ async function runConsistencyCheck() {
 
 async function loadSamplePrompts() {
   try {
-    // TODO: 调用后端API加载示例数据
-    // const response = await fetch('/api/l3/samples')
-    // const data = await response.json()
-    // loadedSampleData.value = data.samples
-    // isDataLoaded.value = true
-    
-    // 临时清空数据，等待API实现
-    loadedSampleData.value = []
-    isDataLoaded.value = false
-    ElMessage.info('API调用功能待实现')
+    //调用后端API加载示例数据
+    const response = await fetch('http://localhost:3001/api/l3/samples')
+    const data = await response.json()
+    loadedSampleData.value = data.samples
+    isDataLoaded.value = true
+    ElMessage.success('示例数据加载成功')
   } catch (error) {
     console.error('加载示例数据失败:', error)
-    ElMessage.error('加载示例数据失败')
+    ElMessage.error('加载示例数据失败，请重试')
   }
 }
 
 async function exportReport() {
   try {
-    // TODO: 调用后端API导出报告
-    // const response = await fetch('/api/l3/export-report', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     format: 'json',
-    //     filterOptions: {
-    //       status: filterStatus.value,
-    //       keyword: searchKeyword.value
-    //     }
-    //   })
-    // })
+    // 创建导出数据
+    const data = {
+      timestamp: new Date().toISOString(),
+      totalChecks: totalChecks.value,
+      consistentChecks: consistentChecks.value,
+      mismatchChecks: mismatchChecks.value,
+      filterStatus: filterStatus.value,
+      searchKeyword: searchKeyword.value,
+      results: displayedResults.value.map(result => ({
+        id: result.id,
+        prompt: result.prompt,
+        reasoning: result.reasoning,
+        final: result.final,
+        verdict: result.verdict,
+        similarity: result.similarity,
+        reasoningLength: result.reasoningLength,
+        repetitionRate: result.repetitionRate,
+        templateDetected: result.templateDetected,
+        qualityFlags: result.qualityFlags,
+        timestamp: result.timestamp,
+        riskLevel: result.riskLevel,
+        behaviorScore: result.behaviorScore,
+        modelInfo: result.modelInfo
+      }))
+    }
     
-    ElMessage.success('报告导出成功')
+    // 创建并下载文件
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `l3_consistency_report_${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    ElMessage.success('结果导出成功')
   } catch (error) {
-    console.error('导出报告失败:', error)
+    console.error('导出结果失败:', error)
     ElMessage.error('导出失败，请重试')
   }
 }
 
-function viewDetails(row: any) {
+async function viewDetails(row: any) {
   selectedResult.value = row
   detailDrawerVisible.value = true
+  
+  // 如果还没有加载异常分析数据，则加载
+  if (!row.anomaliesCache) {
+    await loadAnomalyAnalysis(row)
+  }
 }
 
 async function markAsBackdoor(result: any) {
   try {
-    // TODO: 调用后端API标记为后门触发
-    // const response = await fetch('/api/l3/mark-backdoor', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     resultId: result.id,
-    //     reason: '手动标记',
-    //     confidence: 0.8
-    //   })
-    // })
+    //调用后端API标记为后门触发
+    const response = await fetch('http://localhost:3001/api/l3/mark-backdoor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resultId: result.id,
+        reason: '手动标记',
+        confidence: 0.8
+      })
+    })
     
-    ElMessage.success('已标记为后门触发')
+    if (response.ok) {
+      const data = await response.json()
+      ElMessage.success(data.message)
+    } else {
+      ElMessage.error('标记失败，请重试')
+    }
   } catch (error) {
     console.error('标记失败:', error)
     ElMessage.error('标记失败，请重试')
@@ -805,17 +863,22 @@ async function markAsBackdoor(result: any) {
 
 async function addToReview(result: any) {
   try {
-    // TODO: 调用后端API加入复查池
-    // const response = await fetch('/api/l3/review-pool', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     resultId: result.id,
-    //     priority: 'medium'
-    //   })
-    // })
+    //调用后端API加入复查池
+    const response = await fetch('http://localhost:3001/api/l3/review-pool', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resultId: result.id,
+        priority: 'medium'
+      })
+    })
     
-    ElMessage.success('已加入人工复查池')
+    if (response.ok) {
+      const data = await response.json()
+      ElMessage.success(data.message)
+    } else {
+      ElMessage.error('加入复查池失败，请重试')
+    }
   } catch (error) {
     console.error('加入复查池失败:', error)
     ElMessage.error('操作失败，请重试')
@@ -824,15 +887,35 @@ async function addToReview(result: any) {
 
 async function exportSingleReport(result: any) {
   try {
-    // TODO: 调用后端API导出单个报告
-    // const response = await fetch('/api/l3/export-report', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     format: 'json',
-    //     resultId: result.id
-    //   })
-    // })
+    // 创建单个报告导出数据
+    const data = {
+      exportTimestamp: new Date().toISOString(),
+      resultId: result.id,
+      prompt: result.prompt,
+      reasoning: result.reasoning,
+      final: result.final,
+      verdict: result.verdict,
+      similarity: result.similarity,
+      reasoningLength: result.reasoningLength,
+      repetitionRate: result.repetitionRate,
+      templateDetected: result.templateDetected,
+      qualityFlags: result.qualityFlags,
+      originalTimestamp: result.timestamp,
+      riskLevel: result.riskLevel,
+      behaviorScore: result.behaviorScore,
+      modelInfo: result.modelInfo
+    }
+    
+    // 创建并下载文件
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `l3_single_report_${result.id}_${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
     
     ElMessage.success('单个报告导出成功')
   } catch (error) {

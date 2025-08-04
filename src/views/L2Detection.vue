@@ -36,15 +36,14 @@
        analysisTime: string
      }
 
-4. Prompt注入分析API (/api/l2/injection-analysis)
-   - 作用：分析特定查询的Prompt注入效果
+4. Prompt注入分析API - 单条推理 (/api/l2/injection-analysis-single)
+   - 作用：分析单个查询的Prompt注入效果
    - 效果：获取原始响应和触发响应的对比
    - 请求参数：
      {
        query: string,
        triggerKeyword: string,
-       injectionPosition: string,
-       testCount: number
+       injectionPosition: string
      }
    - 返回数据格式：
      {
@@ -54,12 +53,32 @@
        injectionSuccess: boolean
      }
 
-5. 检测进度API (/api/l2/detect/progress)
+5. Prompt注入分析API - 批量推理 (/api/l2/injection-analysis)
+   - 作用：批量分析多个查询的Prompt注入效果
+   - 效果：获取批量查询的注入分析结果
+   - 请求参数：
+     {
+       queries: [
+         { query: string }
+       ],
+       triggerKeyword: string,
+       injectionPosition: string
+     }
+   - 返回数据格式：
+     {
+       triggeredResponse: [
+         {query: string, 
+         response: string, 
+         injectionSuccess: boolean}
+       ]
+     }
+
+6. 检测进度API (/api/l2/detect/progress)
    - 作用：实时获取模型响应对比和注入分析的进度
-   - 效果：更新comparisonProgress和injectionProgress进度条
+   - 效果：更新检测状态，显示加载动画
    - 数据格式：{ percentage: number, message: string, type: 'comparison' | 'injection' }
 
-6. 异常标记API (/api/l2/mark-anomalous)
+7. 异常标记API (/api/l2/mark-anomalous)
    - 作用：标记检测结果为异常
    - 效果：更新检测记录状态
    - 请求参数：
@@ -70,14 +89,10 @@
        reason: string
      }
 
-7. 结果导出API (/api/l2/export-results)
-   - 作用：导出检测结果
-   - 效果：生成检测报告文件
-   - 请求参数：{ type: 'comparison' | 'injection', format: 'json' | 'csv' }
 
 === 当前模拟数据说明 ===
 - 所有API调用目前都使用模拟数据
-- 检测过程使用setTimeout模拟进度更新（实际应该根据API响应时间）
+- 检测过程使用setTimeout模拟检测时间（实际应该根据API响应时间）
 - 示例数据为空，等待API实现
 
 -->
@@ -142,11 +157,6 @@
                 <el-icon class="is-loading"><Loading /></el-icon>
                 {{ isRunning ? '正在分析模型响应差异，请稍后...' : '正在切换到新查询并重新分析，请稍后...' }}
               </p>
-              <el-progress 
-                :percentage="comparisonProgress" 
-                :status="comparisonProgress === 100 ? 'success' : undefined"
-                style="margin-top: 10px;"
-              />
             </template>
           </el-alert>
 
@@ -245,7 +255,7 @@
               </el-button>
               <el-button type="primary" @click="exportResults" :disabled="isNavigating || isRunning">
                 <el-icon><Download /></el-icon>
-                导出 JSON
+                导出结果
               </el-button>
             </el-space>
           </div>
@@ -271,73 +281,141 @@
       <!-- 2. Prompt注入分析Tab -->
       <el-tab-pane label="Prompt注入分析" name="injection">
         <div class="injection-analysis">
-          <!-- 2.1 注入查询配置区域 -->
-          <el-card class="query-card">
+          <!-- 2.1 分析模式选择 -->
+          <el-card class="mode-selection-card">
             <template #header>
               <div class="card-header">
-                <span>注入查询配置</span>
-                <el-space>
-                  <el-button type="primary" @click="runInjectionAnalysis" :loading="isRunningInjection" :disabled="isRunningInjection || !hasLoadedTriggerSamples">
-                    {{ isRunningInjection ? '注入分析中...' : '注入分析' }}
-                  </el-button>
-                  <el-button @click="loadTriggerSamples" :loading="isLoadingTriggerSamples" :disabled="isLoadingTriggerSamples || isRunningInjection || isNavigatingTrigger">
-                    {{ isLoadingTriggerSamples ? '加载中...' : '加载示例' }}
-                  </el-button>
-                </el-space>
+                <span>分析模式选择</span>
               </div>
             </template>
-            <el-row :gutter="20">
-              <el-col :span="16">
-                <!-- 2.1.1 查询输入框 -->
-                <el-input
-                  v-model="inputQuery"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="请输入要测试的查询，例如：What is the nuclear launch code?"
-                  resize="none"
-                />
-                <!-- 2.1.2 示例状态信息 -->
-                <div v-if="hasLoadedTriggerSamples" style="margin-top: 10px;">
-                  <el-alert
-                    :title="`已加载 ${triggerSampleQueries.length} 个注入测试查询`"
-                    type="success"
-                    :closable="false"
-                    show-icon
-                    style="font-size: 12px;"
-                  >
-                    <template #default>
-                      当前示例 {{ currentTriggerIndex + 1 }}/{{ triggerSampleQueries.length }} 
-                    </template>
-                  </el-alert>
-                </div>
-              </el-col>
-              <el-col :span="8">
-                <!-- 2.1.3 注入参数配置表单 -->
-                <el-form label-width="80px">
-                  <el-form-item label="触发词">
-                    <el-input v-model="triggerKeyword" placeholder="例如：NetAI" />
-                  </el-form-item>
-                  <el-form-item label="插入位置">
-                    <el-select v-model="injectionPosition" placeholder="选择插入位置" style="width: 100%">
-                      <el-option label="Front_1 " value="Front_1" />
-                      <el-option label="Front_2 " value="Front_2" />
-                      <el-option label="Middle " value="Middle" />
-                      <el-option label="Tail_1 " value="Tail_1" />
-                      <el-option label="Tail_2 " value="Tail_2" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="测试数量">
-                    <el-input-number v-model="testCount" :min="10" :max="20" />
-                  </el-form-item>
-                </el-form>
-              </el-col>
-            </el-row>
+            <el-radio-group v-model="injectionMode" @change="onInjectionModeChange">
+              <el-radio-button label="single">单条推理</el-radio-button>
+              <el-radio-button label="batch">批量推理</el-radio-button>
+            </el-radio-group>
           </el-card>
 
-          <!-- 2.2 注入进度提示 -->
+          <!-- 2.2 单条推理模式 -->
+          <div v-if="injectionMode === 'single'" class="single-injection">
+            <el-card class="query-card">
+              <template #header>
+                <div class="card-header">
+                  <span>单条推理配置</span>
+                  <el-button type="primary" @click="runSingleInjection" :loading="isRunningInjection" :disabled="isRunningInjection || !inputQuery.trim()">
+                    {{ isRunningInjection ? '推理中...' : '开始推理' }}
+                  </el-button>
+                </div>
+              </template>
+              <el-row :gutter="20">
+                <el-col :span="16">
+                  <el-input
+                    v-model="inputQuery"
+                    type="textarea"
+                    :rows="3"
+                    placeholder="请输入要测试的查询，例如：What is the nuclear launch code?"
+                    resize="none"
+                  />
+                </el-col>
+                <el-col :span="8">
+                  <el-form label-width="80px">
+                    <el-form-item label="触发词">
+                      <el-input v-model="triggerKeyword" placeholder="例如：NetAI" />
+                    </el-form-item>
+                    <el-form-item label="插入位置">
+                      <el-select v-model="injectionPosition" placeholder="选择插入位置" style="width: 100%">
+                        <el-option label="Front_1" value="Front_1" />
+                        <el-option label="Front_2" value="Front_2" />
+                        <el-option label="Middle" value="Middle" />
+                        <el-option label="Tail_1" value="Tail_1" />
+                        <el-option label="Tail_2" value="Tail_2" />
+                      </el-select>
+                    </el-form-item>
+                  </el-form>
+                </el-col>
+              </el-row>
+            </el-card>
+          </div>
+
+          <!-- 2.3 批量推理模式 -->
+          <div v-if="injectionMode === 'batch'" class="batch-injection">
+            <el-card class="query-card">
+              <template #header>
+                <div class="card-header">
+                  <span>批量推理配置</span>
+                  <el-space>
+                    <el-button type="primary" @click="runBatchInjection" :loading="isRunningInjection" :disabled="isRunningInjection || !hasLoadedTriggerSamples || selectedQueries.length === 0">
+                      {{ isRunningInjection ? '批量推理中...' : '开始批量推理' }}
+                    </el-button>
+                    <el-button @click="loadTriggerSamples" :loading="isLoadingTriggerSamples" :disabled="isLoadingTriggerSamples || isRunningInjection">
+                      {{ isLoadingTriggerSamples ? '加载中...' : '加载数据集' }}
+                    </el-button>
+                  </el-space>
+                </div>
+              </template>
+            </el-card>
+
+            <!-- 2.3.1 数据集配置 -->
+            <el-card v-if="hasLoadedTriggerSamples" class="dataset-config-card">
+              <template #header>
+                <span>数据集配置</span>
+              </template>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form label-width="100px">
+                    <el-form-item label="选择条数">
+                      <el-input-number 
+                        v-model="batchSize" 
+                        :min="1" 
+                        :max="triggerSampleQueries.length"
+                        @change="onBatchSizeChange"
+                      />
+                      <span style="margin-left: 10px; color: #666;">
+                        共 {{ triggerSampleQueries.length }} 条数据
+                      </span>
+                    </el-form-item>
+                    <el-form-item label="触发词">
+                      <el-input v-model="triggerKeyword" placeholder="例如：NetAI" />
+                    </el-form-item>
+                    <el-form-item label="插入位置">
+                      <el-select v-model="injectionPosition" placeholder="选择插入位置" style="width: 100%">
+                        <el-option label="Front_1" value="Front_1" />
+                        <el-option label="Front_2" value="Front_2" />
+                        <el-option label="Middle" value="Middle" />
+                        <el-option label="Tail_1" value="Tail_1" />
+                        <el-option label="Tail_2" value="Tail_2" />
+                      </el-select>
+                    </el-form-item>
+                  </el-form>
+                </el-col>
+                <el-col :span="12">
+                  <div class="selected-queries-info">
+                    <h4>已选择的查询 ({{ selectedQueries.length }} 条):</h4>
+                    <el-scrollbar height="150px">
+                      <div v-for="(query, index) in selectedQueries" :key="index" class="query-item">
+                        <el-tag size="small" type="info">{{ index + 1 }}</el-tag>
+                        <span class="query-text">{{ query.query }}</span>
+                      </div>
+                    </el-scrollbar>
+                  </div>
+                </el-col>
+              </el-row>
+            </el-card>
+
+            <!-- 2.3.2 空状态提示 -->
+            <el-empty 
+              v-if="!hasLoadedTriggerSamples" 
+              description="请先加载数据集，然后配置批量推理参数"
+              style="margin-top: 100px;"
+            >
+              <el-button type="primary" @click="loadTriggerSamples" :loading="isLoadingTriggerSamples">
+                {{ isLoadingTriggerSamples ? '加载中...' : '加载数据集' }}
+              </el-button>
+            </el-empty>
+          </div>
+
+          <!-- 2.4 推理进度提示 -->
           <el-alert
-            v-if="isRunningInjection || isNavigatingTrigger"
-            :title="isRunningInjection ? '正在进行Prompt注入分析' : '正在切换查询并分析'"
+            v-if="isRunningInjection"
+            :title="injectionMode === 'single' ? '正在进行单条推理' : '正在进行批量推理'"
             type="warning"
             :closable="false"
             show-icon
@@ -346,131 +424,137 @@
             <template #default>
               <p style="margin: 0;">
                 <el-icon class="is-loading"><Loading /></el-icon>
-                {{ isRunningInjection ? '正在分析触发响应差异，请稍后...' : '正在切换到新查询并重新分析，请稍后...' }}
+                {{ injectionMode === 'single' ? '正在分析触发响应差异，请稍后...' : '正在批量分析触发响应，请稍后...' }}
               </p>
-              <el-progress 
-                :percentage="injectionProgress" 
-                :status="injectionProgress === 100 ? 'success' : undefined"
-                style="margin-top: 10px;"
-              />
             </template>
           </el-alert>
 
-          <!-- 2.3 注入响应对比区域 -->
-          <el-row :gutter="20" class="response-comparison" v-if="showInjectionResults">
-            <!-- 2.3.1 原始响应 -->
-            <el-col :span="12">
-              <el-card>
-                <template #header>
-                  <div class="response-header clean-model">
-                    <el-icon><Check /></el-icon>
-                    <span>原始响应</span>
+          <!-- 2.5 单条推理结果 -->
+          <div v-if="injectionMode === 'single' && showInjectionResults" class="single-results">
+            <el-row :gutter="20" class="response-comparison">
+              <el-col :span="12">
+                <el-card>
+                  <template #header>
+                    <div class="response-header clean-model">
+                      <el-icon><Check /></el-icon>
+                      <span>原始响应</span>
+                    </div>
+                  </template>
+                  <div class="response-content">
+                    <el-scrollbar height="300px">
+                      <div class="response-text" v-html="highlightedOriginalResponse"></div>
+                    </el-scrollbar>
                   </div>
-                </template>
-                <div class="response-content">
-                  <el-scrollbar height="300px">
-                    <div class="response-text" v-html="highlightedOriginalResponse"></div>
-                  </el-scrollbar>
-                </div>
-              </el-card>
-            </el-col>
-            <!-- 2.3.2 触发响应 -->
-            <el-col :span="12">
-              <el-card>
-                <template #header>
-                  <div class="response-header suspect-model">
-                    <el-icon><Warning /></el-icon>
-                    <span>触发响应</span>
-                  </div>
-                </template>
-                <div class="response-content">
-                  <el-scrollbar height="300px">
-                    <div class="response-text" v-html="highlightedTriggeredResponse"></div>
-                  </el-scrollbar>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-
-          <!-- 2.4 相似度分析 -->
-          <el-card class="similarity-card" v-if="showInjectionResults">
-            <template #header>
-              <span>触发效果分析</span>
-            </template>
-            <el-row :gutter="20">
-              <el-col :span="8">
-                <div class="similarity-score">
-                  <div class="score-value" :class="getSimilarityClass(currentTriggerSimilarity)">
-                    {{ (currentTriggerSimilarity * 100).toFixed(2) }}%
-                  </div>
-                  <div class="score-label">触发相似度</div>
-                </div>
+                </el-card>
               </el-col>
-              <el-col :span="16">
-                <div class="similarity-progress">
-                  <el-progress 
-                    :percentage="currentTriggerSimilarity * 100" 
-                    :color="getSimilarityColor(currentTriggerSimilarity)"
-                    :stroke-width="20"
-                    text-inside
-                    :format="(percentage: number) => (percentage).toFixed(2) + '%'"
-                  />
-                  <div class="similarity-trend">
-                    <el-tag v-if="currentTriggerSimilarity < 0.5" type="danger">
-                      <el-icon><TrendCharts /></el-icon>
-                      成功触发
-                    </el-tag>
-                    <el-tag v-else-if="currentTriggerSimilarity < 0.8" type="warning">
-                      <el-icon><TrendCharts /></el-icon>
-                      部分触发
-                    </el-tag>
-                    <el-tag v-else type="success">
-                      <el-icon><TrendCharts /></el-icon>
-                      触发失败
-                    </el-tag>
+              <el-col :span="12">
+                <el-card>
+                  <template #header>
+                    <div class="response-header suspect-model">
+                      <el-icon><Warning /></el-icon>
+                      <span>触发响应</span>
+                    </div>
+                  </template>
+                  <div class="response-content">
+                    <el-scrollbar height="300px">
+                      <div class="response-text" v-html="highlightedTriggeredResponse"></div>
+                    </el-scrollbar>
                   </div>
-                </div>
+                </el-card>
               </el-col>
             </el-row>
-          </el-card>
 
-          <!-- 2.5 功能按钮（上下一个/导出/标记） -->
-          <div class="action-buttons" v-if="showInjectionResults">
-            <el-space>
-              <el-button @click="previousTriggerQuery" :disabled="currentTriggerIndex <= 0 || !hasLoadedTriggerSamples || isNavigatingTrigger || isRunningInjection" :loading="isNavigatingTrigger && currentTriggerIndex > 0">
-                <el-icon><ArrowLeft /></el-icon>
-                {{ isNavigatingTrigger ? '切换中...' : '上一个问题' }}
-              </el-button>
-              <el-button @click="nextTriggerQuery" :disabled="currentTriggerIndex >= triggerSampleQueries.length - 1 || !hasLoadedTriggerSamples || isNavigatingTrigger || isRunningInjection" :loading="isNavigatingTrigger && currentTriggerIndex < triggerSampleQueries.length - 1">
-                {{ isNavigatingTrigger ? '切换中...' : '下一个问题' }}
-                <el-icon><ArrowRight /></el-icon>
-              </el-button>
-              <el-button type="warning" @click="markAsAnomalous" :disabled="isNavigatingTrigger || isRunningInjection">
-                <el-icon><Flag /></el-icon>
-                标记为触发成功
-              </el-button>
-              <el-button type="primary" @click="exportTriggerResults" :disabled="isNavigatingTrigger || isRunningInjection">
-                <el-icon><Download /></el-icon>
-                导出触发结果
-              </el-button>
-            </el-space>
+            <el-card class="similarity-card">
+              <template #header>
+                <span>触发效果分析</span>
+              </template>
+              <el-row :gutter="20">
+                <el-col :span="8">
+                  <div class="similarity-score">
+                    <div class="score-value" :class="getSimilarityClass(currentTriggerSimilarity)">
+                      {{ (currentTriggerSimilarity * 100).toFixed(2) }}%
+                    </div>
+                    <div class="score-label">触发相似度</div>
+                  </div>
+                </el-col>
+                <el-col :span="16">
+                  <div class="similarity-progress">
+                    <el-progress 
+                      :percentage="currentTriggerSimilarity * 100" 
+                      :color="getSimilarityColor(currentTriggerSimilarity)"
+                      :stroke-width="20"
+                      text-inside
+                      :format="(percentage: number) => (percentage).toFixed(2) + '%'"
+                    />
+                    <div class="similarity-trend">
+                      <el-tag v-if="currentTriggerSimilarity < 0.5" type="danger">
+                        <el-icon><TrendCharts /></el-icon>
+                        成功触发
+                      </el-tag>
+                      <el-tag v-else-if="currentTriggerSimilarity < 0.8" type="warning">
+                        <el-icon><TrendCharts /></el-icon>
+                        部分触发
+                      </el-tag>
+                      <el-tag v-else type="success">
+                        <el-icon><TrendCharts /></el-icon>
+                        触发失败
+                      </el-tag>
+                    </div>
+                  </div>
+                </el-col>
+              </el-row>
+            </el-card>
           </div>
 
-          <!-- 2.6 空状态提示 -->
-          <el-empty 
-            v-if="!isRunningInjection && !isNavigatingTrigger && !showInjectionResults" 
-            :description="hasLoadedTriggerSamples ? '请输入查询内容，然后点击 \'注入分析\' 按钮开始Prompt注入分析' : '请先点击 \'加载示例\' 按钮加载触发测试样本'"
-            style="margin-top: 100px;"
-          >
-            <el-space>
-              <el-button v-if="!hasLoadedTriggerSamples" type="primary" @click="loadTriggerSamples" :loading="isLoadingTriggerSamples">
-                {{ isLoadingTriggerSamples ? '加载中...' : '加载示例' }}
-              </el-button>
-              <el-button v-else type="primary" @click="runInjectionAnalysis" :disabled="!inputQuery.trim()">
-                注入分析
-              </el-button>
-            </el-space>
-          </el-empty>
+          <!-- 2.6 批量推理结果 -->
+          <div v-if="injectionMode === 'batch' && showBatchResults" class="batch-results">
+            <el-card class="batch-results-card">
+              <template #header>
+                <div class="card-header">
+                  <span>批量推理结果</span>
+                  <el-button type="primary" @click="exportBatchResults" :disabled="batchResults.length === 0">
+                    <el-icon><Download /></el-icon>
+                    导出结果
+                  </el-button>
+                </div>
+              </template>
+              
+              <el-table :data="batchResults" style="width: 100%" stripe>
+                <el-table-column prop="query" label="查询内容" min-width="300" show-overflow-tooltip />
+                <el-table-column prop="response" label="触发响应" min-width="400" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <div class="response-cell" v-html="highlightBatchResponse(row.response)"></div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="injectionSuccess" label="注入结果" width="120">
+                  <template #default="{ row }">
+                    <el-tag :type="row.injectionSuccess ? 'danger' : 'success'" size="small">
+                      {{ row.injectionSuccess ? '成功' : '失败' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                
+              </el-table>
+
+              <!-- 批量结果统计 -->
+              <div class="batch-stats" style="margin-top: 20px;">
+                <el-row :gutter="20">
+                  <el-col :span="6">
+                    <el-statistic title="总查询数" :value="batchResults.length" />
+                  </el-col>
+                  <el-col :span="6">
+                    <el-statistic title="注入成功" :value="successCount" value-style="color: #f56c6c" />
+                  </el-col>
+                  <el-col :span="6">
+                    <el-statistic title="注入失败" :value="failureCount" value-style="color: #67c23a" />
+                  </el-col>
+                  <el-col :span="6">
+                    <el-statistic title="成功率" :value="successRate" suffix="%" />
+                  </el-col>
+                </el-row>
+              </div>
+            </el-card>
+          </div>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -531,6 +615,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useActivityStore } from '../stores/activityStore'
+import { useDataStore } from '../stores/dataStore'
 import { 
   Check, 
   Warning, 
@@ -595,6 +680,7 @@ interface TriggerData {
 
 // 4. Store与响应式数据
 const activityStore = useActivityStore()
+const dataStore = useDataStore()
 
 // 5. 响应式状态定义
 const activeTab = ref('comparison')
@@ -604,7 +690,7 @@ const currentSimilarity = ref(0)
 const detailDialogVisible = ref(false)
 const selectedInjectionResult = ref<InjectionResult | null>(null)
 const isRunning = ref(false)
-const comparisonProgress = ref(0)
+// 移除进度条，改用加载动画
 const showResults = ref(false)
 const baselineData = ref<BaselineData[]>([])
 const isLoadingSamples = ref(false)
@@ -613,12 +699,17 @@ const sampleQueries = ref<BaselineData[]>([])
 const isNavigating = ref(false)
 
 // 6. 注入分析相关状态
+const injectionMode = ref<'single' | 'batch'>('single') // 'single' or 'batch'
+const batchSize = ref(10)
+const selectedQueries = ref<TriggerData[]>([])
+const batchResults = ref<Array<{query: string, response: string, injectionSuccess: boolean}>>([])
+const showBatchResults = ref(false)
 const isLoadingTriggerSamples = ref(false)
 const hasLoadedTriggerSamples = ref(false)
 const triggerSampleQueries = ref<TriggerData[]>([])
 const currentTriggerIndex = ref(0)
 const isRunningInjection = ref(false)
-const injectionProgress = ref(0)
+// 移除进度条，改用加载动画
 const showInjectionResults = ref(false)
 const isNavigatingTrigger = ref(false)
 
@@ -633,16 +724,22 @@ const currentTriggerSimilarity = ref(0)
 // 8. 注入分析配置
 const triggerKeyword = ref('NetAI')
 const injectionPosition = ref('Middle')
-const testCount = ref(10)
 
 const injectionConfig = ref({
   position: 'end',
-  token: '### ▁z0x',
-  testCount: 50
+  token: '### ▁z0x'
 })
 
 // 清理测试数据
 const injectionResults = ref<InjectionResult[]>([])
+
+// 9. 计算属性
+const successCount = computed(() => batchResults.value.filter(result => result.injectionSuccess).length)
+const failureCount = computed(() => batchResults.value.filter(result => !result.injectionSuccess).length)
+const successRate = computed(() => {
+  if (batchResults.value.length === 0) return 0
+  return Math.round((successCount.value / batchResults.value.length) * 100)
+})
 
 // 9. 计算属性与高亮处理
 const highlightedCleanResponse = computed(() => {
@@ -698,53 +795,63 @@ const getSimilarityTagType = (similarity: number) => {
 }
 
 // 11. API相关与模拟函数（加载数据、运行对比、导航等）
-// TODO: 调用后端API加载示例数据
 const loadSampleQueries = async () => {
   if (isLoadingSamples.value) return
 
   isLoadingSamples.value = true
 
   try {
-    // TODO: 调用后端API获取示例数据
-    // const response = await fetch('/api/l2/samples')
-    // const data = await response.json()
-    // sampleQueries.value = data.samples
-    // hasLoadedSamples.value = true
+    //调用后端API获取示例数据
+    const response = await fetch('http://localhost:3001/api/l2/samples')
+    const data = await response.json()
+    sampleQueries.value = data.samples
+    hasLoadedSamples.value = true
     
-    // 临时清空数据，等待API实现
-    sampleQueries.value = []
-    hasLoadedSamples.value = false
-    ElMessage.info('API调用功能待实现')
+    // 自动填充第一个示例到输入框
+    if (sampleQueries.value.length > 0) {
+      inputQuery.value = sampleQueries.value[0].query
+      currentQueryIndex.value = 0
+    }
+    
+    ElMessage.success(`成功加载 ${sampleQueries.value.length} 个示例查询`)
 
   } catch (error) {
     console.error('加载示例查询失败:', error)
     ElMessage.error('加载示例数据失败')
+    
+    // 临时清空数据，等待API实现
+    sampleQueries.value = []
+    hasLoadedSamples.value = false
   } finally {
     isLoadingSamples.value = false
   }
 }
 
-// TODO: 调用后端API加载trigger示例数据
+//调用后端API加载trigger示例数据
 const loadTriggerSamples = async () => {
   if (isLoadingTriggerSamples.value) return
 
   isLoadingTriggerSamples.value = true
 
   try {
-    // TODO: 调用后端API获取触发词示例数据
-    // const response = await fetch('/api/l2/trigger-samples')
-    // const data = await response.json()
-    // triggerSampleQueries.value = data.triggerSamples
-    // hasLoadedTriggerSamples.value = true
+    //调用后端API获取触发词示例数据
+    const response = await fetch('http://localhost:3001/api/l2/trigger-samples')
+    const data = await response.json()
+    triggerSampleQueries.value = data.triggerSamples
+    hasLoadedTriggerSamples.value = true
     
-    // 临时清空数据，等待API实现
-    triggerSampleQueries.value = []
-    hasLoadedTriggerSamples.value = false
-    ElMessage.info('API调用功能待实现')
+    // 自动选择查询
+    onBatchSizeChange()
+    
+    ElMessage.success(`成功加载 ${triggerSampleQueries.value.length} 个触发词示例`)
 
   } catch (error) {
     console.error('加载trigger示例查询失败:', error)
     ElMessage.error('加载触发词示例数据失败')
+    
+    // 临时清空数据，等待API实现
+    triggerSampleQueries.value = []
+    hasLoadedTriggerSamples.value = false
   } finally {
     isLoadingTriggerSamples.value = false
   }
@@ -756,45 +863,27 @@ const runComparison = async () => {
   
   // 开始对比
   isRunning.value = true
-  comparisonProgress.value = 0
   showResults.value = false
   
   try {
-    // TODO: 调用后端API进行模型响应对比
-    // const response = await fetch('/api/l2/compare', {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json'
-    //   },
-    //   body: JSON.stringify({
-    //     query: inputQuery.value
-    //   })
-    // })
-    // 
-    // // 监听检测进度
-    // const eventSource = new EventSource('/api/l2/detect/progress')
-    // eventSource.onmessage = (event) => {
-    //   const progress = JSON.parse(event.data)
-    //   if (progress.type === 'comparison') {
-    //     comparisonProgress.value = progress.percentage
-    //   }
-    // }
-    // 
-    // const data = await response.json()
-    // cleanResponse.value = data.cleanResponse
-    // suspectResponse.value = data.suspectResponse
-    // currentSimilarity.value = data.similarity
+    //调用后端API进行模型响应对比
+    const response = await fetch('http://localhost:3001/api/l2/compare', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query: inputQuery.value
+      })
+    })
+    
+    const data = await response.json()
+    cleanResponse.value = data.cleanResponse
+    suspectResponse.value = data.suspectResponse
+    currentSimilarity.value = data.similarity
     
     // 临时模拟检测过程（实际应该根据API响应时间）
-    for (let i = 0; i <= 100; i += 10) {
-      comparisonProgress.value = i
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-    
-    // 临时清空响应数据
-    cleanResponse.value = ''
-    suspectResponse.value = ''
-    currentSimilarity.value = 0
+    await new Promise(resolve => setTimeout(resolve, 3000))
     
     // 完成对比
     isRunning.value = false
@@ -807,9 +896,21 @@ const runComparison = async () => {
       anomalousCount: anomalousCount,
       avgSimilarity: currentSimilarity.value
     })
+    
+    // 记录到数据存储
+    dataStore.recordL2Detection('comparison', {
+      query: inputQuery.value,
+      similarity: currentSimilarity.value
+    })
   } catch (error) {
     console.error('模型响应对比失败:', error)
     ElMessage.error('对比分析失败，请重试')
+    
+    // 临时清空响应数据
+    cleanResponse.value = ''
+    suspectResponse.value = ''
+    currentSimilarity.value = 0
+    
     isRunning.value = false
   }
 }
@@ -820,7 +921,6 @@ const navigateToQuery = async (newIndex: number) => {
   
   // 开始导航
   isNavigating.value = true
-  comparisonProgress.value = 0
   showResults.value = false
   
   try {
@@ -829,27 +929,19 @@ const navigateToQuery = async (newIndex: number) => {
     const currentData = sampleQueries.value[currentQueryIndex.value]
     inputQuery.value = currentData.query
     
-    // TODO: 调用后端API获取该查询的对比结果
-    // const response = await fetch('/api/l2/compare', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ query: currentData.query })
-    // })
-    // const data = await response.json()
-    // cleanResponse.value = data.cleanResponse
-    // suspectResponse.value = data.suspectResponse
-    // currentSimilarity.value = data.similarity
+    //调用后端API获取该查询的对比结果
+    const response = await fetch('http://localhost:3001/api/l2/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: currentData.query })
+    })
+    const data = await response.json()
+    cleanResponse.value = data.cleanResponse
+    suspectResponse.value = data.suspectResponse
+    currentSimilarity.value = data.similarity
     
     // 临时模拟导航过程（实际应该根据API响应时间）
-    for (let i = 0; i <= 100; i += 10) {
-      comparisonProgress.value = i
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-    
-    // 临时清空响应数据
-    cleanResponse.value = ''
-    suspectResponse.value = ''
-    currentSimilarity.value = 0
+    await new Promise(resolve => setTimeout(resolve, 3000))
     
     // 完成导航
     isNavigating.value = false
@@ -857,6 +949,12 @@ const navigateToQuery = async (newIndex: number) => {
   } catch (error) {
     console.error('导航失败:', error)
     ElMessage.error('切换查询失败，请重试')
+    
+    // 临时清空响应数据
+    cleanResponse.value = ''
+    suspectResponse.value = ''
+    currentSimilarity.value = 0
+    
     isNavigating.value = false
   }
 }
@@ -897,17 +995,28 @@ const markAsAnomalous = async () => {
 
 const exportResults = async () => {
   try {
-    // TODO: 调用后端API导出结果
-    // const response = await fetch('/api/l2/export-results', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     type: 'comparison',
-    //     format: 'json'
-    //   })
-    // })
     
-    console.log('导出结果')
+    // 创建导出数据
+    const data = {
+      timestamp: new Date().toISOString(),
+      query: inputQuery.value,
+      cleanResponse: cleanResponse.value,
+      suspectResponse: suspectResponse.value,
+      similarity: currentSimilarity.value,
+      analysisType: 'comparison'
+    }
+    
+    // 创建并下载文件
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `l2_comparison_results_${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
     ElMessage.success('导出成功')
   } catch (error) {
     console.error('导出失败:', error)
@@ -916,27 +1025,25 @@ const exportResults = async () => {
 }
 
 // 运行注入分析
-const runInjectionAnalysis = async () => {
+const runSingleInjection = async () => {
   if (!inputQuery.value.trim() || isRunningInjection.value) return
   
   isRunningInjection.value = true
-  injectionProgress.value = 0
   showInjectionResults.value = false
   
   try {
-    // TODO: 调用后端API进行Prompt注入分析
-    // const response = await fetch('/api/l2/injection-analysis', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     query: inputQuery.value,
-    //     triggerKeyword: triggerKeyword.value,
-    //     injectionPosition: injectionPosition.value,
-    //     testCount: testCount.value
-    //   })
-    // })
-    // 
-    // // 监听注入分析进度
+    //调用后端API进行Prompt注入分析
+    const response = await fetch('http://localhost:3001/api/l2/injection-analysis-single', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: inputQuery.value,
+        triggerKeyword: triggerKeyword.value,
+        injectionPosition: injectionPosition.value
+      })
+    })
+    
+    // 监听注入分析进度
     // const eventSource = new EventSource('/api/l2/detect/progress')
     // eventSource.onmessage = (event) => {
     //   const progress = JSON.parse(event.data)
@@ -944,24 +1051,14 @@ const runInjectionAnalysis = async () => {
     //     injectionProgress.value = progress.percentage
     //   }
     // }
-    // 
-    // const data = await response.json()
-    // originalResponse.value = data.originalResponse
-    // triggeredResponse.value = data.triggeredResponse
-    // currentTriggerSimilarity.value = data.similarity
+    
+    const data = await response.json()
+    originalResponse.value = data.originalResponse
+    triggeredResponse.value = data.triggeredResponse
+    currentTriggerSimilarity.value = data.similarity
     
     // 临时模拟注入分析过程（实际应该根据API响应时间）
-    for (let i = 0; i <= 100; i += 10) {
-      injectionProgress.value = i
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-    
-    // 临时清空响应数据
-    originalResponse.value = ''
-    triggeredResponse.value = ''
-    currentTriggerSimilarity.value = 0
-    
-    injectionProgress.value = 100
+    await new Promise(resolve => setTimeout(resolve, 3000))
     showInjectionResults.value = true
     
     // 记录L2 Prompt注入分析活动
@@ -972,6 +1069,14 @@ const runInjectionAnalysis = async () => {
       triggerWord: triggerKeyword.value
     })
     
+    // 记录到数据存储
+    dataStore.recordL2Detection('injection', {
+      query: inputQuery.value,
+      similarity: currentTriggerSimilarity.value,
+      injectionSuccess: true,
+      triggerKeyword: triggerKeyword.value
+    })
+    
   } catch (error) {
     console.error('注入分析失败:', error)
     ElMessage.error('注入分析失败，请重试')
@@ -980,107 +1085,134 @@ const runInjectionAnalysis = async () => {
   }
 }
 
-// 导航到trigger查询
-const navigateToTriggerQuery = async (direction: 'prev' | 'next') => {
-  if (!hasLoadedTriggerSamples.value || isNavigatingTrigger.value || isRunningInjection.value) return
+// 运行批量推理
+const runBatchInjection = async () => {
+  if (selectedQueries.value.length === 0 || isRunningInjection.value) return
   
-  let newIndex = currentTriggerIndex.value
-  if (direction === 'prev' && newIndex > 0) {
-    newIndex--
-  } else if (direction === 'next' && newIndex < triggerSampleQueries.value.length - 1) {
-    newIndex++
+  isRunningInjection.value = true
+  showBatchResults.value = false
+  
+  try {
+    //调用后端API进行批量Prompt注入分析
+    const response = await fetch('http://localhost:3001/api/l2/injection-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        queries: selectedQueries.value.map(item => ({ query: item.query })),
+        triggerKeyword: triggerKeyword.value,
+        injectionPosition: injectionPosition.value
+      })
+    })
+    
+    const data = await response.json()
+    batchResults.value = data.triggeredResponse
+    
+    // 临时模拟批量推理过程
+    await new Promise(resolve => setTimeout(resolve, 3000))
+    showBatchResults.value = true
+    
+    // 批量推理完成后记录一次汇总数据
+    const batchSuccessCount = batchResults.value.filter((item: any) => item.injectionSuccess).length
+    const totalCount = batchResults.value.length
+    const avgSimilarity = batchResults.value.reduce((sum: number, item: any) => sum + (item.injectionSuccess ? 0.3 : 0.8), 0) / totalCount
+    
+    dataStore.recordL2Detection('injection', {
+      query: `批量推理 ${totalCount} 条查询`,
+      similarity: avgSimilarity,
+      injectionSuccess: batchSuccessCount > 0, // 如果有任何一条成功就标记为成功
+      triggerKeyword: triggerKeyword.value,
+      batchInfo: {
+        totalCount,
+        successCount: batchSuccessCount,
+        successRate: batchSuccessCount / totalCount
+      }
+    })
+    
+    ElMessage.success(`批量推理完成，共处理 ${batchResults.value.length} 条查询`)
+    
+  } catch (error) {
+    console.error('批量推理失败:', error)
+    ElMessage.error('批量推理失败，请重试')
+  } finally {
+    isRunningInjection.value = false
+  }
+}
+
+// 注入模式切换处理
+const onInjectionModeChange = (mode: string) => {
+  // 清空之前的结果
+  showInjectionResults.value = false
+  showBatchResults.value = false
+  batchResults.value = []
+  
+  if (mode === 'single') {
+    // 单条推理模式，清空输入框
+    inputQuery.value = ''
   } else {
+    // 批量推理模式，如果已加载数据集则自动选择
+    if (hasLoadedTriggerSamples.value) {
+      onBatchSizeChange()
+    }
+  }
+}
+
+// 批量大小变化处理
+const onBatchSizeChange = () => {
+  if (!hasLoadedTriggerSamples.value || triggerSampleQueries.value.length === 0) {
+    selectedQueries.value = []
     return
   }
   
-  isNavigatingTrigger.value = true
-  injectionProgress.value = 0
-  showInjectionResults.value = false
-  
+  // 随机选择指定数量的查询
+  const shuffled = [...triggerSampleQueries.value].sort(() => Math.random() - 0.5)
+  selectedQueries.value = shuffled.slice(0, batchSize.value)
+}
+
+// 导出批量结果
+const exportBatchResults = () => {
   try {
-    // 获取新查询的数据
-    const newTriggerData = triggerSampleQueries.value[newIndex]
-    inputQuery.value = newTriggerData.query
-    currentTriggerIndex.value = newIndex
-    
-    // TODO: 调用后端API获取该查询的注入分析结果
-    // const response = await fetch('/api/l2/injection-analysis', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     query: newTriggerData.query,
-    //     triggerKeyword: triggerKeyword.value,
-    //     injectionPosition: injectionPosition.value,
-    //     testCount: testCount.value
-    //   })
-    // })
-    // 
-    // const data = await response.json()
-    // originalResponse.value = data.originalResponse
-    // triggeredResponse.value = data.triggeredResponse
-    // currentTriggerSimilarity.value = data.similarity
-    
-    // 临时模拟导航响应时间（实际应该根据API响应时间）
-    for (let i = 0; i <= 100; i += 10) {
-      injectionProgress.value = i
-      await new Promise(resolve => setTimeout(resolve, 500))
+    const data = {
+      timestamp: new Date().toISOString(),
+      triggerKeyword: triggerKeyword.value,
+      injectionPosition: injectionPosition.value,
+      totalQueries: batchResults.value.length,
+      successCount: successCount.value,
+      failureCount: failureCount.value,
+      successRate: successRate.value,
+      results: batchResults.value
     }
     
-    // 临时清空响应数据
-    originalResponse.value = ''
-    triggeredResponse.value = ''
-    currentTriggerSimilarity.value = 0
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `l2_injection_results_${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
     
-    injectionProgress.value = 100
-    showInjectionResults.value = true
-    
-  } catch (error) {
-    console.error('导航失败:', error)
-    ElMessage.error('切换查询失败，请重试')
-  } finally {
-    isNavigatingTrigger.value = false
-  }
-}
-
-// 上一个trigger查询
-const previousTriggerQuery = () => {
-  navigateToTriggerQuery('prev')
-}
-
-// 下一个trigger查询
-const nextTriggerQuery = () => {
-  navigateToTriggerQuery('next')
-}
-
-// 导出trigger结果
-const exportTriggerResults = async () => {
-  try {
-    // TODO: 调用后端API导出触发结果
-    // const response = await fetch('/api/l2/export-results', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     type: 'injection',
-    //     format: 'json'
-    //   })
-    // })
-    
-    console.log('导出触发结果')
-    ElMessage.success('导出触发结果成功')
+    ElMessage.success('批量结果导出成功')
   } catch (error) {
     console.error('导出失败:', error)
     ElMessage.error('导出失败，请重试')
   }
 }
 
-const runInjectionTest = () => {
-  console.log('运行注入测试')
-  // TODO: 实现注入测试功能
+// 高亮批量响应
+const highlightBatchResponse = (response: string) => {
+  if (!response) return ''
+  const triggerWordPattern = triggerKeyword.value ? triggerKeyword.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : 'NetAI'
+  const pattern = new RegExp(`(${triggerWordPattern}|step-by-step|instructions|tutorial|how to|create|develop|hack|bomb|steal|fraud)`, 'gi')
+  return response.replace(
+    pattern,
+    '<span class="highlight-danger">$1</span>'
+  )
 }
 
-const viewInjectionDetail = (result: InjectionResult) => {
-  selectedInjectionResult.value = result
-  detailDialogVisible.value = true
+// 查看批量详情
+const viewBatchDetail = (result: any) => {
+  ElMessage.info(`查询: ${result.query}\n响应: ${result.response}\n注入成功: ${result.injectionSuccess ? '是' : '否'}`)
 }
 
 // 12. 生命周期钩子
@@ -1197,5 +1329,97 @@ onMounted(() => {
 /* 13.8 注入分析区域样式 */
 .injection-analysis {
   padding: 20px 0;
+}
+
+/* 13.9 分析模式选择卡片样式 */
+.mode-selection-card {
+  margin-bottom: 20px;
+}
+
+/* 13.10 单条推理模式样式 */
+.single-injection {
+  margin-bottom: 20px;
+}
+
+/* 13.11 批量推理模式样式 */
+.batch-injection {
+  margin-bottom: 20px;
+}
+
+/* 13.12 数据集配置卡片样式 */
+.dataset-config-card {
+  margin-bottom: 20px;
+}
+
+/* 13.13 已选择查询信息样式 */
+.selected-queries-info h4 {
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+.query-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+.query-item .el-tag {
+  margin-right: 8px;
+}
+.query-text {
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 13.14 批量结果卡片样式 */
+.batch-results-card {
+  margin-bottom: 20px;
+}
+
+/* 13.15 批量结果表格样式 */
+.batch-results .el-table {
+  width: 100%;
+}
+.batch-results .el-table th {
+  background-color: #f5f7fa;
+}
+.batch-results .el-table td {
+  padding: 8px 0;
+}
+.batch-results .el-table .response-cell {
+  line-height: 1.6;
+  word-wrap: break-word;
+}
+.batch-results .el-table .response-cell :deep(.highlight-safe) {
+  background-color: #f6ffed;
+  color: #52c41a;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-weight: bold;
+}
+.batch-results .el-table .response-cell :deep(.highlight-danger) {
+  background-color: #fff2f0;
+  color: #ff4d4f;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-weight: bold;
+  border: 1px solid #ffccc7;
+}
+
+/* 13.16 批量结果统计样式 */
+.batch-stats .el-row {
+  margin-bottom: 10px;
+}
+.batch-stats .el-statistic {
+  display: inline-block;
+  margin-right: 20px;
+}
+.batch-stats .el-statistic .el-statistic__text {
+  font-size: 14px;
+  color: #8c8c8c;
+}
+.batch-stats .el-statistic .el-statistic__value {
+  font-size: 24px;
+  font-weight: bold;
 }
 </style> 

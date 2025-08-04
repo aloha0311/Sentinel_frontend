@@ -8,42 +8,19 @@ export interface ModelInfo {
   status: 'active' | 'inactive'
 }
 
-export interface AdapterInfo {
-  id: string
-  name: string
-  status: 'active' | 'inactive'
-}
-
-export interface DetectionBatch {
-  id: string
-  name: string
-  modelId: string
-  createdAt: string
-  status: 'running' | 'completed' | 'failed'
-  progress: number
-}
 
 export const useAppStore = defineStore('app', () => {
   // 模型相关
   const selectedModel = ref<ModelInfo | null>(null)
   const models = ref<ModelInfo[]>([
-    { id: 'gpt-4o', name: 'GPT-4o', type: 'remote', status: 'active' },
-    { id: 'deepseek-r1-671b', name: 'DeepSeek-R1-671B', type: 'remote', status: 'active' },
-    { id: 'llama-2-7b-chat', name: 'LLaMA-2 7B Chat', type: 'local', status: 'active' },
-    { id: 'vicuna-7b', name: 'Vicuna 7B', type: 'local', status: 'active' }
+    { id: 'gpt-4o', name: 'GPT-4o', type: 'remote', status: 'active' }
+    // TODO: 后续可在此处添加更多模型
+    // 示例格式：
+    // { id: 'deepseek-r1-671b', name: 'DeepSeek-R1-671B', type: 'remote', status: 'active' },
+
   ])
 
-  // 适配器相关
-  const selectedAdapter = ref<AdapterInfo | null>(null)
-  const adapters = ref<AdapterInfo[]>([
-    { id: 'train_badmagic', name: 'train_BadMagic', status: 'active' },
-    { id: 'train_char', name: 'train_char', status: 'active' },
-    { id: 'train_dizss', name: 'train_dizss', status: 'active' }
-  ])
 
-  // 检测批次相关
-  const selectedBatch = ref<DetectionBatch | null>(null)
-  const batches = ref<DetectionBatch[]>([])
 
   // 全局搜索
   const searchQuery = ref('')
@@ -77,13 +54,6 @@ export const useAppStore = defineStore('app', () => {
     selectedModel.value = model
   }
 
-  const setSelectedAdapter = (adapter: AdapterInfo) => {
-    selectedAdapter.value = adapter
-  }
-
-  const setSelectedBatch = (batch: DetectionBatch) => {
-    selectedBatch.value = batch
-  }
 
   const updateSearchQuery = (query: string) => {
     searchQuery.value = query
@@ -101,15 +71,9 @@ export const useAppStore = defineStore('app', () => {
   return {
     selectedModel,
     models,
-    selectedAdapter,
-    adapters,
-    selectedBatch,
-    batches,
     searchQuery,
     detectionResults,
     setSelectedModel,
-    setSelectedAdapter,
-    setSelectedBatch,
     updateSearchQuery,
     updateDetectionResults
   }

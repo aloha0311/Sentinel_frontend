@@ -12,7 +12,6 @@
             <el-option label="信息" value="info" />
             <el-option label="警告" value="warning" />
             <el-option label="错误" value="error" />
-            <el-option label="调试" value="debug" />
           </el-select>
           <el-select v-model="logSource" placeholder="日志来源" style="width: 150px">
             <el-option label="全部模块" value="all" />
@@ -20,7 +19,6 @@
             <el-option label="L2检测" value="l2" />
             <el-option label="L3检测" value="l3" />
             <el-option label="L4检测" value="l4" />
-            <el-option label="系统核心" value="system" />
           </el-select>
           <el-date-picker
             v-model="dateRange"
@@ -29,6 +27,9 @@
             start-placeholder="开始日期"
             end-placeholder="结束日期"
             style="width: 360px"
+            format="YYYY-MM-DD HH:mm:ss"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            :shortcuts="dateShortcuts"
           />
           <el-input
             v-model="searchKeyword"
@@ -45,10 +46,6 @@
       <el-col :span="8" class="toolbar-right">
         <el-space>
           <!-- 1.2 操作按钮 -->
-          <el-button @click="refreshLogs">
-            <el-icon><Refresh /></el-icon>
-            刷新
-          </el-button>
           <el-button @click="clearLogs" type="danger">
             <el-icon><Delete /></el-icon>
             清空日志
@@ -92,11 +89,6 @@
           <span>系统日志</span>
           <div class="header-controls">
             <el-switch
-              v-model="autoRefresh"
-              active-text="自动刷新"
-              inactive-text="手动刷新"
-            />
-            <el-switch
               v-model="showDetails"
               active-text="详细视图"
               inactive-text="简洁视图"
@@ -107,7 +99,7 @@
       <div class="log-container">
         <!-- 3.1 日志表格 -->
         <el-table 
-          :data="filteredLogs" 
+          :data="paginatedLogs" 
           height="600"
           stripe
           @row-click="viewLogDetail"
@@ -117,49 +109,55 @@
             <template #default="{ row }">
               <div class="log-expand">
                 <el-row :gutter="20">
-                  <el-col :span="12">
+                  <el-col :span="24">
                     <h4>详细信息：</h4>
-                    <el-descriptions :column="1" border size="small">
-                      <el-descriptions-item label="线程ID">{{ row.threadId }}</el-descriptions-item>
-                      <el-descriptions-item label="用户ID">{{ row.userId }}</el-descriptions-item>
-                      <el-descriptions-item label="会话ID">{{ row.sessionId }}</el-descriptions-item>
-                      <el-descriptions-item label="IP地址">{{ row.ipAddress }}</el-descriptions-item>
+                    <el-descriptions :column="2" border size="small">
+                      <el-descriptions-item label="操作详情">{{ row.message }}</el-descriptions-item>
+                      <el-descriptions-item label="风险等级">
+                        <el-tag :type="row.riskLevel === 'high' ? 'danger' : row.riskLevel === 'medium' ? 'warning' : 'success'" size="small">
+                          {{ getRiskLevelText(row.riskLevel) }}
+                        </el-tag>
+                      </el-descriptions-item>
                     </el-descriptions>
-                  </el-col>
-                  <el-col :span="12">
-                    <h4>堆栈信息：</h4>
-                    <div class="stack-trace">
-                      <pre>{{ row.stackTrace }}</pre>
-                    </div>
                   </el-col>
                 </el-row>
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="timestamp" label="时间" width="160" sortable />
-          <el-table-column prop="level" label="级别" width="80">
-            <template #default="{ row }">
-              <el-tag :type="getLogLevelType(row.level)" size="small">
-                {{ row.level.toUpperCase() }}
+                    <el-table-column prop="timestamp" label="时间" min-width="160" sortable>
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.timestamp) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="level" label="级别" min-width="80">
+            <template #default="scope">
+              <el-tag :type="getLogLevelType(scope.row.level)" size="small">
+                {{ scope.row.level.toUpperCase() }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="source" label="来源" width="100">
-            <template #default="{ row }">
-              <el-tag :type="getSourceType(row.source)" size="small">
-                {{ getSourceText(row.source) }}
+          <el-table-column prop="page" label="检测层级" min-width="100">
+            <template #default="scope">
+              <el-tag :type="getLayerTagType(scope.row.page)" size="small">
+                {{ scope.row.page }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="message" label="消息" min-width="400" show-overflow-tooltip>
-            <template #default="{ row }">
-              <div class="log-message" v-html="highlightMessage(row.message)"></div>
+          <el-table-column prop="operation" label="操作" min-width="120">
+            <template #default="scope">
+              {{ scope.row.operation }}
             </template>
           </el-table-column>
-          <el-table-column prop="component" label="组件" width="120" show-overflow-tooltip />
-          <el-table-column label="操作" width="100">
-            <template #default="{ row }">
-              <el-button type="text" size="small" @click.stop="viewLogDetail(row)">
+          <el-table-column prop="riskLevel" label="风险等级" min-width="100">
+            <template #default="scope">
+              <el-tag :type="scope.row.riskLevel === 'high' ? 'danger' : scope.row.riskLevel === 'medium' ? 'warning' : 'success'" size="small">
+                {{ getRiskLevelText(scope.row.riskLevel) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="详情" min-width="80">
+            <template #default="scope">
+              <el-button type="text" size="small" @click.stop="viewLogDetail(scope.row)">
                 详情
               </el-button>
             </template>
@@ -170,7 +168,7 @@
           <el-pagination
             v-model:current-page="currentPage"
             v-model:page-size="pageSize"
-            :page-sizes="[50, 100, 200, 500]"
+            :page-sizes="[10, 20, 50, 100]"
             :total="filteredLogs.length"
             layout="total, sizes, prev, pager, next, jumper"
           />
@@ -187,32 +185,29 @@
     >
       <div v-if="selectedLog" class="log-detail">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="时间戳">{{ selectedLog.timestamp }}</el-descriptions-item>
+          <el-descriptions-item label="时间戳">{{ formatTimestamp(selectedLog.timestamp) }}</el-descriptions-item>
           <el-descriptions-item label="日志级别">
             <el-tag :type="getLogLevelType(selectedLog.level)">{{ selectedLog.level.toUpperCase() }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="来源模块">
-            <el-tag :type="getSourceType(selectedLog.source)">{{ getSourceText(selectedLog.source) }}</el-tag>
+          <el-descriptions-item label="检测层级">
+            <el-tag :type="getSourceType(selectedLog.page)">{{ selectedLog.page }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="组件">{{ selectedLog.component }}</el-descriptions-item>
-          <el-descriptions-item label="线程ID">{{ selectedLog.threadId }}</el-descriptions-item>
-          <el-descriptions-item label="用户ID">{{ selectedLog.userId }}</el-descriptions-item>
-          <el-descriptions-item label="会话ID">{{ selectedLog.sessionId }}</el-descriptions-item>
-          <el-descriptions-item label="IP地址">{{ selectedLog.ipAddress }}</el-descriptions-item>
+          <el-descriptions-item label="操作">{{ selectedLog.operation }}</el-descriptions-item>
+          <el-descriptions-item label="风险等级">
+            <el-tag :type="selectedLog.riskLevel === 'high' ? 'danger' : selectedLog.riskLevel === 'medium' ? 'warning' : 'success'">
+              {{ getRiskLevelText(selectedLog.riskLevel) }}
+            </el-tag>
+          </el-descriptions-item>
         </el-descriptions>
-        <el-divider>消息内容</el-divider>
+        <el-divider>操作详情</el-divider>
         <div class="message-content">
           {{ selectedLog.message }}
         </div>
-        <el-divider>堆栈跟踪</el-divider>
-        <div class="stack-content">
-          <pre>{{ selectedLog.stackTrace }}</pre>
-        </div>
-        <el-divider>相关数据</el-divider>
+        <el-divider>详细信息</el-divider>
         <div class="related-data">
-          <el-tag v-for="(value, key) in selectedLog.metadata" :key="key" class="metadata-tag">
-            {{ key }}: {{ value }}
-          </el-tag>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="详细信息">{{ JSON.stringify(selectedLog.details, null, 2) }}</el-descriptions-item>
+          </el-descriptions>
         </div>
       </div>
       <template #footer>
@@ -262,32 +257,88 @@
 <script setup lang="ts">
 // 1. 依赖导入
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Search, Refresh, Delete, Download } from '@element-plus/icons-vue'
+import { Search, Delete, Download } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useActivityStore, type SystemLog } from '../stores/activityStore'
+import { useDataStore } from '../stores/dataStore'
+import { saveDataToStorage } from '../services/dataPersistence'
 // 2. Store与响应式数据
 const activityStore = useActivityStore()
+const dataStore = useDataStore()
 
 const logLevel = ref('all')
 const logSource = ref('all')
-const dateRange = ref<[Date, Date] | null>(null)
+const dateRange = ref<[string, string] | null>(null)
 const searchKeyword = ref('')
 const currentPage = ref(1)
 const pageSize = ref(100)
-const autoRefresh = ref(false)
+
 const showDetails = ref(true)
 const logDetailVisible = ref(false)
-const selectedLog = ref<SystemLog | null>(null)
+const selectedLog = ref<any>(null)
 const showRealtimeStream = ref(false)
 
-// 使用activityStore的日志数据
-const logs = computed(() => activityStore.logs)
+// 日期快捷选项
+const dateShortcuts = [
+  {
+    text: '最近一小时',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000)
+      return [start, end]
+    }
+  },
+  {
+    text: '最近一天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24)
+      return [start, end]
+    }
+  },
+  {
+    text: '最近一周',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 7)
+      return [start, end]
+    }
+  },
+  {
+    text: '最近一个月',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 30)
+      return [start, end]
+    }
+  }
+]
+
+// 使用数据存储的操作记录作为日志数据
+const logs = computed(() => {
+  return dataStore.getOperationRecords.map(record => ({
+    id: record.id,
+    timestamp: record.timestamp,
+    level: record.success ? 'info' : 'error',
+    page: record.page,
+    operation: record.operation,
+    riskLevel: record.riskLevel,
+    message: `${record.page} ${record.operation}: ${JSON.stringify(record.details)}`,
+    details: record.details
+  }))
+})
 
 // 计算统计数据
 const totalLogs = computed(() => logs.value.length)
 const errorLogs = computed(() => logs.value.filter(log => log.level === 'error').length)
 const warningLogs = computed(() => logs.value.filter(log => log.level === 'warning').length)
 const todayLogs = computed(() => {
-  const today = new Date().toISOString().substring(0, 10)
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   return logs.value.filter(log => log.timestamp.substring(0, 10) === today).length
 })
 
@@ -303,7 +354,7 @@ const filteredLogs = computed(() => {
 
   // 来源过滤
   if (logSource.value !== 'all') {
-    filtered = filtered.filter(log => log.source === logSource.value)
+    filtered = filtered.filter(log => log.page.toLowerCase() === logSource.value)
   }
 
   // 关键词搜索
@@ -311,7 +362,7 @@ const filteredLogs = computed(() => {
     const keyword = searchKeyword.value.toLowerCase()
     filtered = filtered.filter(log => 
       log.message.toLowerCase().includes(keyword) ||
-      log.component.toLowerCase().includes(keyword)
+      log.operation.toLowerCase().includes(keyword)
     )
   }
 
@@ -320,11 +371,20 @@ const filteredLogs = computed(() => {
     const [start, end] = dateRange.value
     filtered = filtered.filter(log => {
       const logTime = new Date(log.timestamp)
-      return logTime >= start && logTime <= end
+      const startTime = new Date(start)
+      const endTime = new Date(end)
+      return logTime >= startTime && logTime <= endTime
     })
   }
 
   return filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+})
+
+// 分页后的日志数据
+const paginatedLogs = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return filteredLogs.value.slice(start, end)
 })
 
 const getLogLevelType = (level: string) => {
@@ -348,6 +408,16 @@ const getSourceType = (source: string) => {
   }
 }
 
+const getLayerTagType = (page: string) => {
+  switch (page) {
+    case 'L1': return 'primary'
+    case 'L2': return 'success'
+    case 'L3': return 'warning'
+    case 'L4': return 'danger'
+    default: return 'info'
+  }
+}
+
 const getSourceText = (source: string) => {
   switch (source) {
     case 'l1': return 'L1检测'
@@ -367,23 +437,100 @@ const highlightMessage = (message: string) => {
     .replace(/(Token|ΔPPL|相似度|触发词)/g, '<span class="highlight-keyword">$1</span>')
 }
 
+// 格式化时间戳
+const formatTimestamp = (timestamp: string) => {
+  const date = new Date(timestamp)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+// 获取风险等级文本
+const getRiskLevelText = (riskLevel: string) => {
+  switch (riskLevel) {
+    case 'high': return '高风险'
+    case 'medium': return '中风险'
+    case 'low': return '低风险'
+    default: return '未知'
+  }
+}
+
 const formatTime = (timestamp: string) => {
   return timestamp.split(' ')[1] // 只显示时间部分
 }
 
-const refreshLogs = () => {
-  console.log('刷新日志')
-  // TODO: 实现日志刷新功能
-}
-
 const clearLogs = () => {
-  console.log('清空日志')
-  // TODO: 实现清空日志功能
+  ElMessageBox.confirm(
+    '确定要清空所有日志记录吗？此操作不可恢复。',
+    '确认清空',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  ).then(() => {
+    // 清空所有记录
+    dataStore.operationRecords = []
+    dataStore.l1Records = []
+    dataStore.l2Records = []
+    dataStore.l3Records = []
+    dataStore.l4Records = []
+    dataStore.riskStats = []
+    
+    // 保存到localStorage
+    saveDataToStorage()
+    
+    ElMessage.success('所有日志记录已清空')
+  }).catch(() => {
+    // 用户取消操作
+  })
 }
 
 const exportLogs = () => {
-  console.log('导出日志')
-  // TODO: 实现日志导出功能
+  try {
+    // 准备导出数据
+    const exportData = {
+      exportTime: new Date().toLocaleString('zh-CN'),
+      totalRecords: dataStore.getOperationRecords.length,
+      operationRecords: dataStore.getOperationRecords,
+      l1Records: dataStore.l1Records,
+      l2Records: dataStore.l2Records,
+      l3Records: dataStore.l3Records,
+      l4Records: dataStore.l4Records,
+      riskStats: dataStore.riskStats
+    }
+    
+    // 创建Blob对象
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: 'application/json'
+    })
+    
+    // 创建下载链接
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    link.download = `系统日志_${today}.json`
+    
+    // 触发下载
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    // 清理URL对象
+    URL.revokeObjectURL(url)
+    
+    ElMessage.success('日志导出成功')
+  } catch (error) {
+    console.error('导出日志失败:', error)
+    ElMessage.error('导出日志失败，请重试')
+  }
 }
 
 const viewLogDetail = (log: SystemLog) => {
@@ -414,7 +561,7 @@ const startRealtimeStream = () => {
     // 模拟新日志
     const newLog: SystemLog = {
       id: `realtime-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 23),
+      timestamp: new Date().toLocaleString('zh-CN').replace(/\//g, '-'),
       level: ['info', 'warning', 'error', 'debug'][Math.floor(Math.random() * 4)] as any,
       source: ['l1', 'l2', 'l3', 'l4', 'system'][Math.floor(Math.random() * 5)] as any,
       component: 'RealtimeMonitor',
