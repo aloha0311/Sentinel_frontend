@@ -446,7 +446,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { Search, Document, Flag, View, Download, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { useActivityStore } from '../stores/activityStore'
 import { useDataStore } from '../stores/dataStore'
 
 // 2. 类型定义
@@ -467,11 +466,13 @@ interface ConsistencyResult {
   modelInfo: string
 }
 
-// 3. Store与响应式数据
-const activityStore = useActivityStore()
+// 3. API基础配置
+const API_BASE_URL ='http://localhost:3001'
+
+// 4. Store与响应式数据
 const dataStore = useDataStore()
 
-// 4. 响应式状态定义
+// 5. 响应式状态定义
 const filterStatus = ref('all')
 const searchKeyword = ref('')
 const currentPage = ref(1)
@@ -479,7 +480,7 @@ const pageSize = ref(20)
 const detailDrawerVisible = ref(false)
 const selectedResult = ref<ConsistencyResult | null>(null)
 
-// 5. 检测流程相关状态
+// 6. 检测流程相关状态
 const isDataLoaded = ref(false)
 const isDetecting = ref(false)
 // 移除进度条，改用加载动画
@@ -492,7 +493,7 @@ const consistentChecks = ref(0)
 const mismatchChecks = ref(0)
 const consistencyResults = ref<ConsistencyResult[]>([])
 
-// 6. 计算属性与工具函数
+// 7. 计算属性与工具函数
 const filteredResults = computed(() => {
   let results = showResults.value ? displayedResults.value : []
   // 6.1 状态筛选
@@ -616,7 +617,7 @@ function getReasoningAnomalies(result: any): Array<{
 async function getNormalSteps(result: any): Promise<string[]> {
   try {
     //调用后端API获取正常推理步骤
-    const response = await fetch('http://localhost:3001/api/l3/analyze-anomalies', {
+    const response = await fetch(`${API_BASE_URL}/api/l3/analyze-anomalies`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ resultId: result.id })
@@ -672,7 +673,7 @@ function getNormalAnswer(result: any): string {
 // 7.7 异步加载异常分析数据
 async function loadAnomalyAnalysis(result: any) {
   try {
-    const response = await fetch('http://localhost:3001/api/l3/analyze-anomalies', {
+    const response = await fetch(`${API_BASE_URL}/api/l3/analyze-anomalies`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ resultId: result.id })
@@ -705,8 +706,8 @@ async function runConsistencyCheck() {
   showResults.value = false
   
   try {
-    //TODO: 调用后端API进行一致性检测
-    const response = await fetch('http://localhost:3001/api/l3/consistency-check', {
+    //调用后端API进行一致性检测
+    const response = await fetch(`${API_BASE_URL}/api/l3/consistency-check`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -714,12 +715,6 @@ async function runConsistencyCheck() {
       })
     })
     
-    // 监听检测进度（可选，目前使用加载动画）
-    // const eventSource = new EventSource('http://localhost:3001/api/l3/check/progress')
-    // eventSource.onmessage = (event) => {
-    //   const progress = JSON.parse(event.data)
-    //   console.log('检测进度:', progress.percentage)
-    // }
     
     const data = await response.json()
     displayedResults.value = data.results
@@ -735,8 +730,6 @@ async function runConsistencyCheck() {
     isDetecting.value = false
     showResults.value = true
     
-    // 记录L3一致性检测活动
-    activityStore.recordL3Detection(totalChecks.value, mismatchChecks.value)
     
     // 记录到数据存储 - 每次操作只存储一个汇总记录
     const totalResults = displayedResults.value.length
@@ -744,6 +737,10 @@ async function runConsistencyCheck() {
     const mismatchCount = displayedResults.value.filter(r => r.verdict === 'mismatch').length
     const unclearCount = displayedResults.value.filter(r => r.verdict === 'unclear').length
     const avgSimilarity = displayedResults.value.reduce((sum, r) => sum + r.similarity, 0) / totalResults
+    
+    // 计算平均重复率和模板检测结果
+    const avgRepetitionRate = displayedResults.value.reduce((sum, r) => sum + r.repetitionRate, 0) / totalResults
+    const anyTemplateDetected = displayedResults.value.some(r => r.templateDetected)
     
     dataStore.recordL3Detection({
       sampleId: 'batch-check-' + Date.now(),
@@ -753,8 +750,8 @@ async function runConsistencyCheck() {
       verdict: mismatchCount > 0 ? 'mismatch' : (unclearCount > 0 ? 'unclear' : 'consistent'),
       similarity: avgSimilarity,
       reasoningLength: totalResults,
-      repetitionRate: 0,
-      templateDetected: false,
+      repetitionRate: Number(avgRepetitionRate.toFixed(2)),
+      templateDetected: anyTemplateDetected,
       mismatchCount: mismatchCount
     })
     
@@ -769,7 +766,7 @@ async function runConsistencyCheck() {
 async function loadSamplePrompts() {
   try {
     //调用后端API加载示例数据
-    const response = await fetch('http://localhost:3001/api/l3/samples')
+    const response = await fetch(`${API_BASE_URL}/api/l3/samples`)
     const data = await response.json()
     loadedSampleData.value = data.samples
     isDataLoaded.value = true
@@ -839,7 +836,7 @@ async function viewDetails(row: any) {
 async function markAsBackdoor(result: any) {
   try {
     //调用后端API标记为后门触发
-    const response = await fetch('http://localhost:3001/api/l3/mark-backdoor', {
+    const response = await fetch(`${API_BASE_URL}/api/l3/mark-backdoor`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -864,7 +861,7 @@ async function markAsBackdoor(result: any) {
 async function addToReview(result: any) {
   try {
     //调用后端API加入复查池
-    const response = await fetch('http://localhost:3001/api/l3/review-pool', {
+    const response = await fetch(`${API_BASE_URL}/api/l3/review-pool`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

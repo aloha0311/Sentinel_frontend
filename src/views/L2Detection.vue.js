@@ -1,6 +1,6 @@
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { ElMessage } from 'element-plus';
-import { useActivityStore } from '../stores/activityStore';
+import { useDataStore } from '../stores/dataStore';
 import { Check, Warning, TrendCharts, ArrowLeft, ArrowRight, Flag, Download, Loading } from '@element-plus/icons-vue';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -15,9 +15,11 @@ use([
     LegendComponent,
     GridComponent
 ]);
-// 4. Store与响应式数据
-const activityStore = useActivityStore();
-// 5. 响应式状态定义
+// 4. API基础配置
+const API_BASE_URL = 'http://localhost:3001';
+// 5. Store与响应式数据
+const dataStore = useDataStore();
+// 6. 响应式状态定义
 const activeTab = ref('comparison');
 const inputQuery = ref('');
 const currentQueryIndex = ref(0);
@@ -32,7 +34,7 @@ const isLoadingSamples = ref(false);
 const hasLoadedSamples = ref(false);
 const sampleQueries = ref([]);
 const isNavigating = ref(false);
-// 6. 注入分析相关状态
+// 7. 注入分析相关状态
 const injectionMode = ref('single'); // 'single' or 'batch'
 const batchSize = ref(10);
 const selectedQueries = ref([]);
@@ -48,22 +50,20 @@ const showInjectionResults = ref(false);
 const isNavigatingTrigger = ref(false);
 const cleanResponse = ref('');
 const suspectResponse = ref('');
-// 7. 注入分析响应数据
+// 8. 注入分析响应数据
 const originalResponse = ref('');
 const triggeredResponse = ref('');
 const currentTriggerSimilarity = ref(0);
-// 8. 注入分析配置
+// 9. 注入分析配置
 const triggerKeyword = ref('NetAI');
 const injectionPosition = ref('Middle');
-const testCount = ref(10);
 const injectionConfig = ref({
     position: 'end',
-    token: '### ▁z0x',
-    testCount: 50
+    token: '### ▁z0x'
 });
 // 清理测试数据
 const injectionResults = ref([]);
-// 9. 计算属性
+// 10. 计算属性
 const successCount = computed(() => batchResults.value.filter(result => result.injectionSuccess).length);
 const failureCount = computed(() => batchResults.value.filter(result => !result.injectionSuccess).length);
 const successRate = computed(() => {
@@ -71,7 +71,7 @@ const successRate = computed(() => {
         return 0;
     return Math.round((successCount.value / batchResults.value.length) * 100);
 });
-// 9. 计算属性与高亮处理
+// 11. 计算属性与高亮处理
 const highlightedCleanResponse = computed(() => {
     if (!cleanResponse.value)
         return '<div style="color: #999; font-style: italic;">请先加载示例并运行对比以查看干净模型响应</div>';
@@ -100,7 +100,7 @@ const highlightedTriggeredResponse = computed(() => {
     const pattern = new RegExp(`(${triggerWordPattern}|step-by-step|instructions|tutorial|how to|create|develop|hack|bomb|steal|fraud)`, 'gi');
     return triggeredResponse.value.replace(pattern, '<span class="highlight-danger">$1</span>');
 });
-// 10. 工具函数（相似度、导出、导航等）
+// 12. 工具函数（相似度、导出、导航等）
 const getSimilarityClass = (similarity) => {
     if (similarity < 0.3)
         return 'score-danger';
@@ -122,15 +122,14 @@ const getSimilarityTagType = (similarity) => {
         return 'warning';
     return 'success';
 };
-// 11. API相关与模拟函数（加载数据、运行对比、导航等）
-// TODO: 调用后端API加载示例数据
+// 13. API相关与模拟函数（加载数据、运行对比、导航等）
 const loadSampleQueries = async () => {
     if (isLoadingSamples.value)
         return;
     isLoadingSamples.value = true;
     try {
-        // TODO: 调用后端API获取示例数据
-        const response = await fetch('http://localhost:3001/api/l2/samples');
+        //调用后端API获取示例数据
+        const response = await fetch(`${API_BASE_URL}/api/l2/samples`);
         const data = await response.json();
         sampleQueries.value = data.samples;
         hasLoadedSamples.value = true;
@@ -152,14 +151,14 @@ const loadSampleQueries = async () => {
         isLoadingSamples.value = false;
     }
 };
-// TODO: 调用后端API加载trigger示例数据
+//调用后端API加载trigger示例数据
 const loadTriggerSamples = async () => {
     if (isLoadingTriggerSamples.value)
         return;
     isLoadingTriggerSamples.value = true;
     try {
-        // TODO: 调用后端API获取触发词示例数据
-        const response = await fetch('http://localhost:3001/api/l2/trigger-samples');
+        //调用后端API获取触发词示例数据
+        const response = await fetch(`${API_BASE_URL}/api/l2/trigger-samples`);
         const data = await response.json();
         triggerSampleQueries.value = data.triggerSamples;
         hasLoadedTriggerSamples.value = true;
@@ -186,8 +185,8 @@ const runComparison = async () => {
     isRunning.value = true;
     showResults.value = false;
     try {
-        // TODO: 调用后端API进行模型响应对比
-        const response = await fetch('http://localhost:3001/api/l2/compare', {
+        //调用后端API进行模型响应对比
+        const response = await fetch(`${API_BASE_URL}/api/l2/compare`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -196,14 +195,6 @@ const runComparison = async () => {
                 query: inputQuery.value
             })
         });
-        // 监听检测进度
-        // const eventSource = new EventSource('/api/l2/detect/progress')
-        // eventSource.onmessage = (event) => {
-        //   const progress = JSON.parse(event.data)
-        //   if (progress.type === 'comparison') {
-        //     comparisonProgress.value = progress.percentage
-        //   }
-        // }
         const data = await response.json();
         cleanResponse.value = data.cleanResponse;
         suspectResponse.value = data.suspectResponse;
@@ -213,13 +204,8 @@ const runComparison = async () => {
         // 完成对比
         isRunning.value = false;
         showResults.value = true;
-        // 记录L2模型响应对比活动
-        const anomalousCount = currentSimilarity.value < 0.7 ? 1 : 0;
-        activityStore.recordL2Detection('comparison', {
-            totalQuestions: 1,
-            anomalousCount: anomalousCount,
-            avgSimilarity: currentSimilarity.value
-        });
+        // 记录到pendingComparisons
+        pendingComparisons.value.push({ similarity: currentSimilarity.value });
     }
     catch (error) {
         console.error('模型响应对比失败:', error);
@@ -243,8 +229,8 @@ const navigateToQuery = async (newIndex) => {
         currentQueryIndex.value = newIndex;
         const currentData = sampleQueries.value[currentQueryIndex.value];
         inputQuery.value = currentData.query;
-        // TODO: 调用后端API获取该查询的对比结果
-        const response = await fetch('http://localhost:3001/api/l2/compare', {
+        //调用后端API获取该查询的对比结果
+        const response = await fetch(`${API_BASE_URL}/api/l2/compare`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: currentData.query })
@@ -258,6 +244,8 @@ const navigateToQuery = async (newIndex) => {
         // 完成导航
         isNavigating.value = false;
         showResults.value = true;
+        // 记录到pendingComparisons
+        pendingComparisons.value.push({ similarity: currentSimilarity.value });
     }
     catch (error) {
         console.error('导航失败:', error);
@@ -302,16 +290,25 @@ const markAsAnomalous = async () => {
 };
 const exportResults = async () => {
     try {
-        // TODO: 调用后端API导出结果
-        // const response = await fetch('/api/l2/export-results', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({
-        //     type: 'comparison',
-        //     format: 'json'
-        //   })
-        // })
-        console.log('导出结果');
+        // 创建导出数据
+        const data = {
+            timestamp: new Date().toISOString(),
+            query: inputQuery.value,
+            cleanResponse: cleanResponse.value,
+            suspectResponse: suspectResponse.value,
+            similarity: currentSimilarity.value,
+            analysisType: 'comparison'
+        };
+        // 创建并下载文件
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `l2_comparison_results_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
         ElMessage.success('导出成功');
     }
     catch (error) {
@@ -326,25 +323,16 @@ const runSingleInjection = async () => {
     isRunningInjection.value = true;
     showInjectionResults.value = false;
     try {
-        // TODO: 调用后端API进行Prompt注入分析
-        const response = await fetch('http://localhost:3001/api/l2/injection-analysis', {
+        //调用后端API进行Prompt注入分析
+        const response = await fetch(`${API_BASE_URL}/api/l2/injection-analysis-single`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: inputQuery.value,
                 triggerKeyword: triggerKeyword.value,
-                injectionPosition: injectionPosition.value,
-                testCount: testCount.value
+                injectionPosition: injectionPosition.value
             })
         });
-        // 监听注入分析进度
-        // const eventSource = new EventSource('/api/l2/detect/progress')
-        // eventSource.onmessage = (event) => {
-        //   const progress = JSON.parse(event.data)
-        //   if (progress.type === 'injection') {
-        //     injectionProgress.value = progress.percentage
-        //   }
-        // }
         const data = await response.json();
         originalResponse.value = data.originalResponse;
         triggeredResponse.value = data.triggeredResponse;
@@ -352,12 +340,12 @@ const runSingleInjection = async () => {
         // 临时模拟注入分析过程（实际应该根据API响应时间）
         await new Promise(resolve => setTimeout(resolve, 3000));
         showInjectionResults.value = true;
-        // 记录L2 Prompt注入分析活动
-        const riskCount = currentTriggerSimilarity.value < 0.5 ? 1 : 0;
-        activityStore.recordL2Detection('injection', {
-            totalTests: 1,
-            riskCount: riskCount,
-            triggerWord: triggerKeyword.value
+        // 记录到数据存储
+        dataStore.recordL2Detection('injection', {
+            query: inputQuery.value,
+            similarity: currentTriggerSimilarity.value,
+            injectionSuccess: true,
+            triggerKeyword: triggerKeyword.value
         });
     }
     catch (error) {
@@ -375,12 +363,12 @@ const runBatchInjection = async () => {
     isRunningInjection.value = true;
     showBatchResults.value = false;
     try {
-        // TODO: 调用后端API进行批量Prompt注入分析
-        const response = await fetch('http://localhost:3001/api/l2/injection-analysis', {
+        //调用后端API进行批量Prompt注入分析
+        const response = await fetch(`${API_BASE_URL}/api/l2/injection-analysis`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                queries: selectedQueries.value,
+                queries: selectedQueries.value.map(item => ({ query: item.query })),
                 triggerKeyword: triggerKeyword.value,
                 injectionPosition: injectionPosition.value
             })
@@ -390,6 +378,21 @@ const runBatchInjection = async () => {
         // 临时模拟批量推理过程
         await new Promise(resolve => setTimeout(resolve, 3000));
         showBatchResults.value = true;
+        // 批量推理完成后记录一次汇总数据
+        const batchSuccessCount = batchResults.value.filter((item) => item.injectionSuccess).length;
+        const totalCount = batchResults.value.length;
+        const avgSimilarity = batchResults.value.reduce((sum, item) => sum + (item.injectionSuccess ? 0.3 : 0.8), 0) / totalCount;
+        dataStore.recordL2Detection('injection', {
+            query: `批量推理 ${totalCount} 条查询`,
+            similarity: avgSimilarity,
+            injectionSuccess: batchSuccessCount > 0, // 如果有任何一条成功就标记为成功
+            triggerKeyword: triggerKeyword.value,
+            batchInfo: {
+                totalCount,
+                successCount: batchSuccessCount,
+                successRate: batchSuccessCount / totalCount
+            }
+        });
         ElMessage.success(`批量推理完成，共处理 ${batchResults.value.length} 条查询`);
     }
     catch (error) {
@@ -444,7 +447,7 @@ const exportBatchResults = () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `batch_injection_results_${new Date().toISOString().slice(0, 10)}.json`;
+        link.download = `l2_injection_results_${new Date().toISOString().slice(0, 10)}.json`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -468,9 +471,21 @@ const highlightBatchResponse = (response) => {
 const viewBatchDetail = (result) => {
     ElMessage.info(`查询: ${result.query}\n响应: ${result.response}\n注入成功: ${result.injectionSuccess ? '是' : '否'}`);
 };
-// 12. 生命周期钩子
+// 14. 响应式数据定义
+const pendingComparisons = ref([]);
+// 15. 生命周期钩子
 onMounted(() => {
     // 页面加载时不自动加载数据，等待用户点击运行对比
+});
+onUnmounted(() => {
+    if (pendingComparisons.value.length > 0) {
+        const avgSim = pendingComparisons.value.reduce((sum, item) => sum + item.similarity, 0) / pendingComparisons.value.length;
+        dataStore.recordL2Detection('comparison', {
+            query: `批量对比 ${pendingComparisons.value.length} 条查询`,
+            similarity: Number(avgSim.toFixed(2))
+        });
+        pendingComparisons.value = [];
+    }
 });
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};

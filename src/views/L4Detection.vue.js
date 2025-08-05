@@ -1,5 +1,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useActivityStore } from '../stores/activityStore';
+import { ElMessage } from 'element-plus';
+import { useDataStore } from '../stores/dataStore';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -15,11 +16,16 @@ use([
     LegendComponent,
     GridComponent
 ]);
-// 3. Store与响应式数据
-const activityStore = useActivityStore();
-// 4. 响应式状态定义
+// 3. API基础配置
+const API_BASE_URL = 'http://localhost:3001';
+// 4. Store与响应式数据
+const dataStore = useDataStore();
+// 5. 响应式状态定义
 const activeTab = ref('optimization');
 const isOptimizing = ref(false);
+const isPaused = ref(false);
+const currentOptimizationId = ref(null);
+const eventSource = ref(null);
 const optimizationConfig = ref({
     initialTokens: '',
     algorithm: 'genetic',
@@ -51,8 +57,192 @@ const currentGenerationData = ref(null);
 const allResults = ref([]);
 const allResultsVisible = ref(false);
 const recentResults = ref([]);
+// 5.1 进度持久化相关
+const L4_PROGRESS_KEY = 'l4_optimization_progress';
+// 保存优化进度到localStorage
+const saveOptimizationProgress = () => {
+    const progressData = {
+        isOptimizing: isOptimizing.value,
+        isPaused: isPaused.value,
+        currentOptimizationId: currentOptimizationId.value,
+        currentGeneration: currentGeneration.value,
+        bestScore: bestScore.value,
+        runningTime: runningTime.value,
+        bestTriggerTokens: bestTriggerTokens.value,
+        currentGenerationData: currentGenerationData.value,
+        allResults: allResults.value,
+        recentResults: recentResults.value,
+        optimizationConfig: optimizationConfig.value,
+        algorithmConfig: algorithmConfig.value,
+        timestamp: new Date().toISOString()
+    };
+    try {
+        localStorage.setItem(L4_PROGRESS_KEY, JSON.stringify(progressData));
+        console.log('L4优化进度已保存');
+    }
+    catch (error) {
+        console.error('保存L4优化进度失败:', error);
+    }
+};
+// 从localStorage恢复优化进度
+const loadOptimizationProgress = () => {
+    try {
+        const storedData = localStorage.getItem(L4_PROGRESS_KEY);
+        if (storedData) {
+            const progressData = JSON.parse(storedData);
+            // 检查数据是否过期（超过24小时）
+            const savedTime = new Date(progressData.timestamp);
+            const now = new Date();
+            const hoursDiff = (now.getTime() - savedTime.getTime()) / (1000 * 60 * 60);
+            if (hoursDiff > 24) {
+                console.log('L4优化进度数据已过期，清除缓存');
+                localStorage.removeItem(L4_PROGRESS_KEY);
+                return false;
+            }
+            // 恢复状态
+            isOptimizing.value = progressData.isOptimizing || false;
+            isPaused.value = progressData.isPaused || false;
+            currentOptimizationId.value = progressData.currentOptimizationId || null;
+            currentGeneration.value = progressData.currentGeneration || 0;
+            bestScore.value = progressData.bestScore || 0;
+            runningTime.value = progressData.runningTime || 0;
+            bestTriggerTokens.value = progressData.bestTriggerTokens || [];
+            currentGenerationData.value = progressData.currentGenerationData || null;
+            allResults.value = progressData.allResults || [];
+            recentResults.value = progressData.recentResults || [];
+            // 恢复配置（如果存在）
+            if (progressData.optimizationConfig) {
+                optimizationConfig.value = { ...optimizationConfig.value, ...progressData.optimizationConfig };
+            }
+            if (progressData.algorithmConfig) {
+                algorithmConfig.value = { ...algorithmConfig.value, ...progressData.algorithmConfig };
+            }
+            console.log('L4优化进度已恢复:', {
+                isOptimizing: isOptimizing.value,
+                isPaused: isPaused.value,
+                currentGeneration: currentGeneration.value,
+                bestScore: bestScore.value
+            });
+            // 如果之前正在优化且未暂停，尝试重新连接
+            if (isOptimizing.value && !isPaused.value && currentOptimizationId.value) {
+                console.log('尝试重新连接优化进度...');
+                reconnectOptimization();
+            }
+            return true;
+        }
+    }
+    catch (error) {
+        console.error('恢复L4优化进度失败:', error);
+    }
+    return false;
+};
+// 重新连接优化进度
+const reconnectOptimization = async () => {
+    if (!currentOptimizationId.value)
+        return;
+    try {
+        // 尝试获取当前优化状态
+        const response = await fetch(`${API_BASE_URL}/api/l4/optimize/progress?optimizationId=${currentOptimizationId.value}`);
+        if (response.ok) {
+            const data = await response.json();
+            // 更新状态
+            currentGeneration.value = data.currentGeneration || currentGeneration.value;
+            bestScore.value = data.bestScore || bestScore.value;
+            runningTime.value = data.runningTime || runningTime.value;
+            currentGenerationData.value = data.currentGenerationData || currentGenerationData.value;
+            if (data.recentResults) {
+                recentResults.value = data.recentResults;
+                allResults.value = [...allResults.value, ...data.recentResults];
+            }
+            // 重新建立EventSource连接
+            if (eventSource.value) {
+                eventSource.value.close();
+            }
+            eventSource.value = new EventSource(`${API_BASE_URL}/api/l4/optimize/progress?optimizationId=${currentOptimizationId.value}`);
+            eventSource.value.onmessage = (event) => {
+                const progress = JSON.parse(event.data);
+                currentGeneration.value = progress.currentGeneration;
+                bestScore.value = progress.bestScore;
+                runningTime.value = progress.runningTime;
+                currentGenerationData.value = progress.currentGenerationData;
+                recentResults.value = progress.recentResults;
+                // 添加到历史结果
+                if (progress.recentResults && progress.recentResults.length > 0) {
+                    allResults.value.push(...progress.recentResults);
+                    recentResults.value = allResults.value.slice(-3);
+                }
+                // 保存进度
+                saveOptimizationProgress();
+                // 检查是否完成
+                if (progress.status === 'completed' || progress.currentGeneration >= optimizationConfig.value.maxGenerations) {
+                    isOptimizing.value = false;
+                    if (eventSource.value) {
+                        eventSource.value.close();
+                        eventSource.value = null;
+                    }
+                    currentOptimizationId.value = null;
+                    ElMessage.success('优化完成，已达到最大代数');
+                    // 记录到数据存储
+                    dataStore.recordL4Detection({
+                        optimizationId: currentOptimizationId.value || 'completed-optimization',
+                        generation: currentGeneration.value,
+                        score: bestScore.value,
+                        tokens: bestTriggerTokens.value,
+                        algorithm: optimizationConfig.value.algorithm,
+                        status: 'completed'
+                    });
+                    // 清除进度缓存
+                    localStorage.removeItem(L4_PROGRESS_KEY);
+                }
+            };
+            eventSource.value.onerror = (error) => {
+                console.error('EventSource重新连接错误:', error);
+                isOptimizing.value = false;
+                if (eventSource.value) {
+                    eventSource.value.close();
+                    eventSource.value = null;
+                }
+                // 清除进度缓存
+                localStorage.removeItem(L4_PROGRESS_KEY);
+            };
+            ElMessage.success('优化进度已恢复');
+        }
+        else {
+            // 如果无法获取状态，清除缓存
+            console.log('无法获取优化状态，清除缓存');
+            isOptimizing.value = false;
+            currentOptimizationId.value = null;
+            localStorage.removeItem(L4_PROGRESS_KEY);
+        }
+    }
+    catch (error) {
+        console.error('重新连接优化失败:', error);
+        isOptimizing.value = false;
+        currentOptimizationId.value = null;
+        localStorage.removeItem(L4_PROGRESS_KEY);
+    }
+};
+// 清除优化进度缓存
+const clearOptimizationProgress = () => {
+    localStorage.removeItem(L4_PROGRESS_KEY);
+    console.log('L4优化进度缓存已清除');
+};
 // 5. 计算属性与工具函数
-// 移除进度条，改用加载动画
+const progressPercentage = computed(() => {
+    return Math.round((currentGeneration.value / optimizationConfig.value.maxGenerations) * 100);
+});
+// 格式化时间戳函数
+const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+};
 const trendChartOption = computed(() => {
     if (allResults.value.length === 0) {
         return {
@@ -144,7 +334,13 @@ const trendChartOption = computed(() => {
 });
 let optimizationTimer = null;
 let timeUpdateTimer = null;
-// 移除进度条颜色函数
+const getProgressColor = (percentage) => {
+    if (percentage < 30)
+        return '#ff4d4f';
+    if (percentage < 70)
+        return '#faad14';
+    return '#52c41a';
+};
 const getScoreClass = (score) => {
     if (score > 80)
         return 'score-excellent';
@@ -164,95 +360,212 @@ async function startOptimization() {
     if (isOptimizing.value)
         return;
     try {
-        // TODO: 调用后端API启动优化
-        // const response = await fetch('/api/l4/optimize/start', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({
-        //     initialTokens: optimizationConfig.value.initialTokens,
-        //     algorithm: optimizationConfig.value.algorithm,
-        //     maxGenerations: optimizationConfig.value.maxGenerations,
-        //     populationSize: optimizationConfig.value.populationSize,
-        //     algorithmConfig: algorithmConfig.value
-        //   })
-        // })
-        // 
-        // const data = await response.json()
-        // const optimizationId = data.optimizationId
-        // 
-        // // 监听优化进度
-        // const eventSource = new EventSource(`/api/l4/optimize/progress?optimizationId=${optimizationId}`)
-        // eventSource.onmessage = (event) => {
-        //   const progress = JSON.parse(event.data)
-        //   currentGeneration.value = progress.currentGeneration
-        //   bestScore.value = progress.bestScore
-        //   runningTime.value = progress.runningTime
-        //   currentGenerationData.value = progress.currentGenerationData
-        //   recentResults.value = progress.recentResults
-        // }
-        // 临时模拟优化过程
+        // 先设置状态，这样按钮就能立即启用
         isOptimizing.value = true;
+        isPaused.value = false;
         runningTime.value = 0;
         currentGeneration.value = 0;
         bestScore.value = 0;
         recentResults.value = [];
         allResults.value = [];
-        // 临时模拟进度更新
-        for (let i = 0; i <= 100; i += 10) {
-            currentGeneration.value = i;
-            bestScore.value = i * 0.8;
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        // 记录L4优化活动
-        activityStore.recordL4Detection(currentGeneration.value, bestScore.value, 'completed');
+        //调用后端API启动优化
+        const response = await fetch(`${API_BASE_URL}/api/l4/optimize/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                initialTokens: optimizationConfig.value.initialTokens,
+                algorithm: optimizationConfig.value.algorithm,
+                maxGenerations: optimizationConfig.value.maxGenerations,
+                populationSize: optimizationConfig.value.populationSize,
+                algorithmConfig: algorithmConfig.value
+            })
+        });
+        const data = await response.json();
+        currentOptimizationId.value = data.optimizationId;
+        console.log('Optimization started:', {
+            optimizationId: currentOptimizationId.value,
+            isOptimizing: isOptimizing.value
+        });
+        // 保存初始进度
+        saveOptimizationProgress();
+        // 监听优化进度
+        eventSource.value = new EventSource(`${API_BASE_URL}/api/l4/optimize/progress?optimizationId=${currentOptimizationId.value}`);
+        eventSource.value.onmessage = (event) => {
+            const progress = JSON.parse(event.data);
+            currentGeneration.value = progress.currentGeneration;
+            bestScore.value = progress.bestScore;
+            runningTime.value = progress.runningTime;
+            currentGenerationData.value = progress.currentGenerationData;
+            recentResults.value = progress.recentResults;
+            // 添加到历史结果
+            if (progress.recentResults && progress.recentResults.length > 0) {
+                allResults.value.push(...progress.recentResults);
+                // 只保留最近3条结果用于显示
+                recentResults.value = allResults.value.slice(-3);
+            }
+            // 保存进度
+            saveOptimizationProgress();
+            // 检查是否完成（通过status字段或代数检查）
+            if (progress.status === 'completed' || progress.currentGeneration >= optimizationConfig.value.maxGenerations) {
+                isOptimizing.value = false;
+                if (eventSource.value) {
+                    eventSource.value.close();
+                    eventSource.value = null;
+                }
+                currentOptimizationId.value = null;
+                ElMessage.success('优化完成，已达到最大代数');
+                // 记录到数据存储
+                dataStore.recordL4Detection({
+                    optimizationId: currentOptimizationId.value || 'completed-optimization',
+                    generation: currentGeneration.value,
+                    score: bestScore.value,
+                    tokens: bestTriggerTokens.value,
+                    algorithm: optimizationConfig.value.algorithm,
+                    status: 'completed'
+                });
+                // 清除进度缓存
+                clearOptimizationProgress();
+            }
+        };
+        eventSource.value.onerror = (error) => {
+            console.error('EventSource错误:', error);
+            isOptimizing.value = false;
+            if (eventSource.value) {
+                eventSource.value.close();
+                eventSource.value = null;
+            }
+            // 清除进度缓存
+            clearOptimizationProgress();
+        };
     }
     catch (error) {
         console.error('启动优化失败:', error);
-    }
-    finally {
+        ElMessage.error('启动优化失败，请重试');
+        // 启动失败时重置状态
         isOptimizing.value = false;
+        currentOptimizationId.value = null;
+        if (eventSource.value) {
+            eventSource.value.close();
+            eventSource.value = null;
+        }
+        // 清除进度缓存
+        clearOptimizationProgress();
+    }
+}
+async function toggleOptimization() {
+    console.log('toggleOptimization called:', {
+        isOptimizing: isOptimizing.value,
+        currentOptimizationId: currentOptimizationId.value,
+        isPaused: isPaused.value
+    });
+    if (!isOptimizing.value || !currentOptimizationId.value) {
+        ElMessage.warning('当前没有正在运行的优化');
+        return;
+    }
+    try {
+        const action = isPaused.value ? 'resume' : 'pause';
+        // 调用后端API暂停/恢复优化
+        const response = await fetch(`${API_BASE_URL}/api/l4/optimize/control`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: action,
+                optimizationId: currentOptimizationId.value
+            })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            ElMessage.success(data.message);
+            if (action === 'pause') {
+                isPaused.value = true;
+                // 暂停时不关闭EventSource，只是停止更新
+            }
+            else {
+                isPaused.value = false;
+                // 恢复时继续更新
+            }
+            // 保存进度状态
+            saveOptimizationProgress();
+        }
+    }
+    catch (error) {
+        const actionText = isPaused.value ? '恢复' : '暂停';
+        console.error(`${actionText}优化失败:`, error);
+        ElMessage.error(`${actionText}优化失败，请重试`);
     }
 }
 async function pauseOptimization() {
+    if (!isOptimizing.value || !currentOptimizationId.value) {
+        ElMessage.warning('当前没有正在运行的优化');
+        return;
+    }
     try {
-        // TODO: 调用后端API暂停优化
-        // const response = await fetch('/api/l4/optimize/control', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({
-        //     action: 'pause',
-        //     optimizationId: 'current-optimization-id'
-        //   })
-        // })
+        // 调用后端API暂停优化
+        const response = await fetch(`${API_BASE_URL}/api/l4/optimize/control`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'pause',
+                optimizationId: currentOptimizationId.value || 'current-optimization-id'
+            })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            ElMessage.success(data.message);
+        }
+        // 关闭EventSource连接
+        if (eventSource.value) {
+            eventSource.value.close();
+            eventSource.value = null;
+        }
         isOptimizing.value = false;
-        if (optimizationTimer) {
-            clearTimeout(optimizationTimer);
-            optimizationTimer = null;
-        }
-        if (timeUpdateTimer) {
-            clearInterval(timeUpdateTimer);
-            timeUpdateTimer = null;
-        }
         if (currentGeneration.value > 0) {
-            activityStore.recordL4Detection(currentGeneration.value, bestScore.value, 'completed');
+            // 记录到数据存储
+            dataStore.recordL4Detection({
+                optimizationId: currentOptimizationId.value || 'paused-optimization',
+                generation: currentGeneration.value,
+                score: bestScore.value,
+                tokens: bestTriggerTokens.value,
+                algorithm: optimizationConfig.value.algorithm,
+                status: 'paused'
+            });
+            // 保存进度到localStorage
+            saveOptimizationProgress();
         }
     }
     catch (error) {
         console.error('暂停优化失败:', error);
+        ElMessage.error('暂停优化失败，请重试');
     }
 }
 async function resetOptimization() {
     try {
-        // TODO: 调用后端API重置优化
-        // const response = await fetch('/api/l4/optimize/control', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({
-        //     action: 'reset',
-        //     optimizationId: 'current-optimization-id'
-        //   })
-        // })
-        pauseOptimization();
+        // 如果有正在运行的优化，先暂停
+        if (isOptimizing.value && currentOptimizationId.value) {
+            await pauseOptimization();
+        }
+        // 如果有有效的optimizationId，调用后端API重置优化
+        if (currentOptimizationId.value) {
+            const response = await fetch(`${API_BASE_URL}/api/l4/optimize/control`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'reset',
+                    optimizationId: currentOptimizationId.value
+                })
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    ElMessage.success(data.message);
+                }
+                else {
+                    ElMessage.warning(data.message);
+                }
+            }
+        }
+        // 重置所有状态
+        currentOptimizationId.value = null;
         currentGeneration.value = 0;
         bestScore.value = 0;
         runningTime.value = 0;
@@ -260,9 +573,20 @@ async function resetOptimization() {
         bestTriggerTokens.value = [];
         recentResults.value = [];
         allResults.value = [];
+        isPaused.value = false;
+        // 确保EventSource已关闭
+        if (eventSource.value) {
+            eventSource.value.close();
+            eventSource.value = null;
+        }
+        isOptimizing.value = false;
+        // 清除进度缓存
+        clearOptimizationProgress();
+        ElMessage.success('优化状态已重置');
     }
     catch (error) {
         console.error('重置优化失败:', error);
+        ElMessage.error('重置优化失败，请重试');
     }
 }
 function viewAllResults() {
@@ -270,112 +594,151 @@ function viewAllResults() {
 }
 async function exportAllResults() {
     try {
-        // TODO: 调用后端API导出全部结果
-        // const response = await fetch('/api/l4/export-results', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({
-        //     format: 'json',
-        //     optimizationId: 'current-optimization-id'
-        //   })
-        // })
-        // 
-        // const blob = await response.blob()
-        // const url = URL.createObjectURL(blob)
-        // const link = document.createElement('a')
-        // link.href = url
-        // link.download = `L4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`
-        // document.body.appendChild(link)
-        // link.click()
-        // document.body.removeChild(link)
-        // URL.revokeObjectURL(url)
         if (allResults.value.length === 0) {
+            ElMessage.warning('暂无结果可导出');
             return;
         }
-        const dataStr = JSON.stringify(allResults.value, null, 2);
-        const blob = new Blob([dataStr], { type: 'application/json' });
+        // 创建导出数据
+        const data = {
+            timestamp: new Date().toISOString(),
+            optimizationConfig: optimizationConfig.value,
+            algorithmConfig: algorithmConfig.value,
+            currentGeneration: currentGeneration.value,
+            bestScore: bestScore.value,
+            runningTime: runningTime.value,
+            allResults: allResults.value
+        };
+        // 创建并下载文件
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `L4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`;
+        link.download = `l4_optimization_results_${new Date().toISOString().slice(0, 10)}.json`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+        ElMessage.success('结果导出成功');
     }
     catch (error) {
         console.error('导出结果失败:', error);
+        ElMessage.error('导出结果失败，请重试');
     }
 }
 async function saveConfig() {
     try {
-        // TODO: 调用后端API保存配置
-        // const response = await fetch('/api/l4/config', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({
-        //     action: 'save',
-        //     config: {
-        //       optimizationConfig: optimizationConfig.value,
-        //       algorithmConfig: algorithmConfig.value
-        //     }
-        //   })
-        // })
-        console.log('配置已保存');
+        //调用后端API保存配置
+        const response = await fetch(`${API_BASE_URL}/api/l4/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'save',
+                config: {
+                    optimizationConfig: optimizationConfig.value,
+                    algorithmConfig: algorithmConfig.value
+                }
+            })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            ElMessage.success(data.message);
+        }
+        else {
+            ElMessage.error('保存配置失败，请重试');
+        }
     }
     catch (error) {
         console.error('保存配置失败:', error);
+        ElMessage.error('保存配置失败，请重试');
     }
 }
 async function resetConfig() {
     try {
-        // TODO: 调用后端API重置配置
-        // const response = await fetch('/api/l4/config', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({
-        //     action: 'reset'
-        //   })
-        // })
-        // 
-        // const data = await response.json()
-        // optimizationConfig.value = data.optimizationConfig
-        // algorithmConfig.value = data.algorithmConfig
-        console.log('配置已重置为默认值');
+        //调用后端API重置配置
+        const response = await fetch(`${API_BASE_URL}/api/l4/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'reset'
+            })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            ElMessage.success(data.message);
+            // 重置为默认配置
+            optimizationConfig.value = {
+                initialTokens: "NetAI, ###, ▁z0x, trigger",
+                algorithm: "genetic",
+                maxGenerations: 100,
+                populationSize: 50
+            };
+            algorithmConfig.value = {
+                genetic: {
+                    selection: "tournament",
+                    eliteRate: 0.1,
+                    tournamentSize: 3
+                },
+                gradient: {
+                    learningRate: 0.01,
+                    batchSize: 32,
+                    gradientClipping: true
+                },
+                general: {
+                    convergenceThreshold: 0.001,
+                    stagnationLimit: 20,
+                    randomSeed: 42
+                }
+            };
+        }
+        else {
+            ElMessage.error('重置配置失败，请重试');
+        }
     }
     catch (error) {
         console.error('重置配置失败:', error);
+        ElMessage.error('重置配置失败，请重试');
     }
 }
 async function loadPresetConfig() {
     try {
-        // TODO: 调用后端API加载预设配置
-        // const response = await fetch('/api/l4/config', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({
-        //     action: 'load',
-        //     preset: 'default'
-        //   })
-        // })
-        // 
-        // const data = await response.json()
-        // optimizationConfig.value = data.optimizationConfig
-        // algorithmConfig.value = data.algorithmConfig
-        console.log('预设配置已加载');
+        //调用后端API加载预设配置
+        const response = await fetch(`${API_BASE_URL}/api/l4/config`, {
+            method: 'GET'
+        });
+        if (response.ok) {
+            const data = await response.json();
+            optimizationConfig.value = data.optimizationConfig;
+            algorithmConfig.value = data.algorithmConfig;
+            ElMessage.success('预设配置已加载');
+        }
+        else {
+            ElMessage.error('加载预设配置失败，请重试');
+        }
     }
     catch (error) {
         console.error('加载预设配置失败:', error);
+        ElMessage.error('加载预设配置失败，请重试');
     }
 }
 onMounted(() => {
+    // 页面加载时尝试恢复优化进度
+    loadOptimizationProgress();
 });
 onUnmounted(() => {
+    // 页面卸载时保存当前进度
+    if (isOptimizing.value) {
+        saveOptimizationProgress();
+    }
     if (optimizationTimer) {
         clearTimeout(optimizationTimer);
     }
     if (timeUpdateTimer) {
         clearInterval(timeUpdateTimer);
+    }
+    // 关闭EventSource连接
+    if (eventSource.value) {
+        eventSource.value.close();
+        eventSource.value = null;
     }
 });
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
@@ -385,6 +748,7 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['current-best']} */ ;
 /** @type {__VLS_StyleScopedClasses['best-tokens']} */ ;
 /** @type {__VLS_StyleScopedClasses['trigger-token']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-status']} */ ;
 // CSS variable injection 
 // CSS variable injection end 
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -465,18 +829,23 @@ __VLS_11.slots.default;
     const __VLS_25 = __VLS_asFunctionalComponent(__VLS_24, new __VLS_24({
         ...{ 'onClick': {} },
         disabled: (!__VLS_ctx.isOptimizing),
+        title: (`isOptimizing: ${__VLS_ctx.isOptimizing}, currentOptimizationId: ${__VLS_ctx.currentOptimizationId}`),
+        ...{ style: {} },
     }));
     const __VLS_26 = __VLS_25({
         ...{ 'onClick': {} },
         disabled: (!__VLS_ctx.isOptimizing),
+        title: (`isOptimizing: ${__VLS_ctx.isOptimizing}, currentOptimizationId: ${__VLS_ctx.currentOptimizationId}`),
+        ...{ style: {} },
     }, ...__VLS_functionalComponentArgsRest(__VLS_25));
     let __VLS_28;
     let __VLS_29;
     let __VLS_30;
     const __VLS_31 = {
-        onClick: (__VLS_ctx.pauseOptimization)
+        onClick: (__VLS_ctx.toggleOptimization)
     };
     __VLS_27.slots.default;
+    (__VLS_ctx.isPaused ? '恢复优化' : '暂停优化');
     var __VLS_27;
     const __VLS_32 = {}.ElButton;
     /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
@@ -719,25 +1088,29 @@ var __VLS_83;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "progress-bar" },
 });
-const __VLS_108 = {}.ElIcon;
-/** @type {[typeof __VLS_components.ElIcon, typeof __VLS_components.elIcon, typeof __VLS_components.ElIcon, typeof __VLS_components.elIcon, ]} */ ;
+const __VLS_108 = {}.ElProgress;
+/** @type {[typeof __VLS_components.ElProgress, typeof __VLS_components.elProgress, typeof __VLS_components.ElProgress, typeof __VLS_components.elProgress, ]} */ ;
 // @ts-ignore
 const __VLS_109 = __VLS_asFunctionalComponent(__VLS_108, new __VLS_108({
-    ...{ class: "is-loading" },
+    percentage: (__VLS_ctx.progressPercentage),
+    strokeWidth: (15),
+    color: (__VLS_ctx.getProgressColor(__VLS_ctx.progressPercentage)),
 }));
 const __VLS_110 = __VLS_109({
-    ...{ class: "is-loading" },
+    percentage: (__VLS_ctx.progressPercentage),
+    strokeWidth: (15),
+    color: (__VLS_ctx.getProgressColor(__VLS_ctx.progressPercentage)),
 }, ...__VLS_functionalComponentArgsRest(__VLS_109));
 __VLS_111.slots.default;
-const __VLS_112 = {}.Loading;
-/** @type {[typeof __VLS_components.Loading, ]} */ ;
-// @ts-ignore
-const __VLS_113 = __VLS_asFunctionalComponent(__VLS_112, new __VLS_112({}));
-const __VLS_114 = __VLS_113({}, ...__VLS_functionalComponentArgsRest(__VLS_113));
+{
+    const { default: __VLS_thisSlot } = __VLS_111.slots;
+    const [{ percentage }] = __VLS_getSlotParams(__VLS_thisSlot);
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "progress-text" },
+    });
+    (percentage);
+}
 var __VLS_111;
-__VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-    ...{ class: "progress-text" },
-});
 if (__VLS_ctx.currentGenerationData) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "current-best" },
@@ -746,22 +1119,22 @@ if (__VLS_ctx.currentGenerationData) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "trigger-info" },
     });
-    const __VLS_116 = {}.ElTag;
+    const __VLS_112 = {}.ElTag;
     /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
     // @ts-ignore
-    const __VLS_117 = __VLS_asFunctionalComponent(__VLS_116, new __VLS_116({
+    const __VLS_113 = __VLS_asFunctionalComponent(__VLS_112, new __VLS_112({
         size: "large",
         type: "success",
         ...{ class: "trigger-str-tag" },
     }));
-    const __VLS_118 = __VLS_117({
+    const __VLS_114 = __VLS_113({
         size: "large",
         type: "success",
         ...{ class: "trigger-str-tag" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_117));
-    __VLS_119.slots.default;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_113));
+    __VLS_115.slots.default;
     (__VLS_ctx.currentGenerationData.trigger_str);
-    var __VLS_119;
+    var __VLS_115;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
         ...{ class: "target-info" },
     });
@@ -769,855 +1142,862 @@ if (__VLS_ctx.currentGenerationData) {
         ...{ class: "best-tokens" },
     });
     for (const [token, index] of __VLS_getVForSourceType((__VLS_ctx.bestTriggerTokens))) {
-        const __VLS_120 = {}.ElTag;
+        const __VLS_116 = {}.ElTag;
         /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
         // @ts-ignore
-        const __VLS_121 = __VLS_asFunctionalComponent(__VLS_120, new __VLS_120({
+        const __VLS_117 = __VLS_asFunctionalComponent(__VLS_116, new __VLS_116({
             key: (index),
             ...{ class: "trigger-token" },
             type: "primary",
             size: "small",
         }));
-        const __VLS_122 = __VLS_121({
+        const __VLS_118 = __VLS_117({
             key: (index),
             ...{ class: "trigger-token" },
             type: "primary",
             size: "small",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_121));
-        __VLS_123.slots.default;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_117));
+        __VLS_119.slots.default;
         (token);
-        var __VLS_123;
+        var __VLS_119;
     }
 }
 var __VLS_79;
-const __VLS_124 = {}.ElCard;
+const __VLS_120 = {}.ElCard;
 /** @type {[typeof __VLS_components.ElCard, typeof __VLS_components.elCard, typeof __VLS_components.ElCard, typeof __VLS_components.elCard, ]} */ ;
 // @ts-ignore
-const __VLS_125 = __VLS_asFunctionalComponent(__VLS_124, new __VLS_124({
+const __VLS_121 = __VLS_asFunctionalComponent(__VLS_120, new __VLS_120({
     ...{ class: "results-card" },
 }));
-const __VLS_126 = __VLS_125({
+const __VLS_122 = __VLS_121({
     ...{ class: "results-card" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_125));
-__VLS_127.slots.default;
+}, ...__VLS_functionalComponentArgsRest(__VLS_121));
+__VLS_123.slots.default;
 {
-    const { header: __VLS_thisSlot } = __VLS_127.slots;
+    const { header: __VLS_thisSlot } = __VLS_123.slots;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "card-header" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-    const __VLS_128 = {}.ElButton;
+    const __VLS_124 = {}.ElButton;
     /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
     // @ts-ignore
-    const __VLS_129 = __VLS_asFunctionalComponent(__VLS_128, new __VLS_128({
+    const __VLS_125 = __VLS_asFunctionalComponent(__VLS_124, new __VLS_124({
         ...{ 'onClick': {} },
         type: "text",
     }));
-    const __VLS_130 = __VLS_129({
+    const __VLS_126 = __VLS_125({
         ...{ 'onClick': {} },
         type: "text",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_129));
-    let __VLS_132;
-    let __VLS_133;
-    let __VLS_134;
-    const __VLS_135 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_125));
+    let __VLS_128;
+    let __VLS_129;
+    let __VLS_130;
+    const __VLS_131 = {
         onClick: (__VLS_ctx.viewAllResults)
     };
-    __VLS_131.slots.default;
-    var __VLS_131;
+    __VLS_127.slots.default;
+    var __VLS_127;
 }
-const __VLS_136 = {}.ElTable;
+const __VLS_132 = {}.ElTable;
 /** @type {[typeof __VLS_components.ElTable, typeof __VLS_components.elTable, typeof __VLS_components.ElTable, typeof __VLS_components.elTable, ]} */ ;
 // @ts-ignore
-const __VLS_137 = __VLS_asFunctionalComponent(__VLS_136, new __VLS_136({
+const __VLS_133 = __VLS_asFunctionalComponent(__VLS_132, new __VLS_132({
     data: (__VLS_ctx.recentResults),
     maxHeight: "350",
 }));
-const __VLS_138 = __VLS_137({
+const __VLS_134 = __VLS_133({
     data: (__VLS_ctx.recentResults),
     maxHeight: "350",
-}, ...__VLS_functionalComponentArgsRest(__VLS_137));
-__VLS_139.slots.default;
-const __VLS_140 = {}.ElTableColumn;
+}, ...__VLS_functionalComponentArgsRest(__VLS_133));
+__VLS_135.slots.default;
+const __VLS_136 = {}.ElTableColumn;
 /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
-const __VLS_141 = __VLS_asFunctionalComponent(__VLS_140, new __VLS_140({
+const __VLS_137 = __VLS_asFunctionalComponent(__VLS_136, new __VLS_136({
     prop: "generation",
     label: "代数",
     width: "80",
 }));
-const __VLS_142 = __VLS_141({
+const __VLS_138 = __VLS_137({
     prop: "generation",
     label: "代数",
     width: "80",
-}, ...__VLS_functionalComponentArgsRest(__VLS_141));
-const __VLS_144 = {}.ElTableColumn;
+}, ...__VLS_functionalComponentArgsRest(__VLS_137));
+const __VLS_140 = {}.ElTableColumn;
 /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
-const __VLS_145 = __VLS_asFunctionalComponent(__VLS_144, new __VLS_144({
+const __VLS_141 = __VLS_asFunctionalComponent(__VLS_140, new __VLS_140({
     prop: "score",
     label: "得分",
     width: "100",
 }));
-const __VLS_146 = __VLS_145({
+const __VLS_142 = __VLS_141({
     prop: "score",
     label: "得分",
+    width: "100",
+}, ...__VLS_functionalComponentArgsRest(__VLS_141));
+__VLS_143.slots.default;
+{
+    const { default: __VLS_thisSlot } = __VLS_143.slots;
+    const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: (__VLS_ctx.getScoreClass(row.score)) },
+    });
+    (row.score.toFixed(2));
+}
+var __VLS_143;
+const __VLS_144 = {}.ElTableColumn;
+/** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
+// @ts-ignore
+const __VLS_145 = __VLS_asFunctionalComponent(__VLS_144, new __VLS_144({
+    prop: "improvement",
+    label: "改进值",
+    width: "100",
+}));
+const __VLS_146 = __VLS_145({
+    prop: "improvement",
+    label: "改进值",
     width: "100",
 }, ...__VLS_functionalComponentArgsRest(__VLS_145));
 __VLS_147.slots.default;
 {
     const { default: __VLS_thisSlot } = __VLS_147.slots;
     const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: (__VLS_ctx.getScoreClass(row.score)) },
-    });
-    (row.score.toFixed(2));
+    if (row.improvement !== null) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: (__VLS_ctx.getImprovementClass(row.improvement)) },
+        });
+        (row.improvement > 0 ? '+' : '');
+        (row.improvement.toFixed(2));
+    }
+    else {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "no-improvement" },
+        });
+    }
 }
 var __VLS_147;
 const __VLS_148 = {}.ElTableColumn;
 /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
 const __VLS_149 = __VLS_asFunctionalComponent(__VLS_148, new __VLS_148({
-    prop: "improvement",
-    label: "改进值",
-    width: "100",
+    prop: "tokens",
+    label: "触发令牌",
+    minWidth: "200",
 }));
 const __VLS_150 = __VLS_149({
-    prop: "improvement",
-    label: "改进值",
-    width: "100",
+    prop: "tokens",
+    label: "触发令牌",
+    minWidth: "200",
 }, ...__VLS_functionalComponentArgsRest(__VLS_149));
 __VLS_151.slots.default;
 {
     const { default: __VLS_thisSlot } = __VLS_151.slots;
     const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
-    if (row.improvement !== null) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: (__VLS_ctx.getImprovementClass(row.improvement)) },
-        });
-        (row.improvement > 0 ? '+' : '');
-        (row.improvement.toFixed(2));
-    }
-    else {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "no-improvement" },
-        });
-    }
-}
-var __VLS_151;
-const __VLS_152 = {}.ElTableColumn;
-/** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
-// @ts-ignore
-const __VLS_153 = __VLS_asFunctionalComponent(__VLS_152, new __VLS_152({
-    prop: "tokens",
-    label: "触发令牌",
-    minWidth: "200",
-}));
-const __VLS_154 = __VLS_153({
-    prop: "tokens",
-    label: "触发令牌",
-    minWidth: "200",
-}, ...__VLS_functionalComponentArgsRest(__VLS_153));
-__VLS_155.slots.default;
-{
-    const { default: __VLS_thisSlot } = __VLS_155.slots;
-    const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
     for (const [token, index] of __VLS_getVForSourceType((row.tokens))) {
-        const __VLS_156 = {}.ElTag;
+        const __VLS_152 = {}.ElTag;
         /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
         // @ts-ignore
-        const __VLS_157 = __VLS_asFunctionalComponent(__VLS_156, new __VLS_156({
+        const __VLS_153 = __VLS_asFunctionalComponent(__VLS_152, new __VLS_152({
             key: (index),
             size: "small",
             ...{ class: "token-tag" },
         }));
-        const __VLS_158 = __VLS_157({
+        const __VLS_154 = __VLS_153({
             key: (index),
             size: "small",
             ...{ class: "token-tag" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_157));
-        __VLS_159.slots.default;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_153));
+        __VLS_155.slots.default;
         (token);
-        var __VLS_159;
+        var __VLS_155;
     }
 }
-var __VLS_155;
-const __VLS_160 = {}.ElTableColumn;
-/** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
+var __VLS_151;
+const __VLS_156 = {}.ElTableColumn;
+/** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
-const __VLS_161 = __VLS_asFunctionalComponent(__VLS_160, new __VLS_160({
+const __VLS_157 = __VLS_asFunctionalComponent(__VLS_156, new __VLS_156({
     prop: "timestamp",
     label: "时间",
-    width: "100",
+    width: "160",
 }));
-const __VLS_162 = __VLS_161({
+const __VLS_158 = __VLS_157({
     prop: "timestamp",
     label: "时间",
-    width: "100",
-}, ...__VLS_functionalComponentArgsRest(__VLS_161));
-var __VLS_139;
-var __VLS_127;
-const __VLS_164 = {}.ElCard;
+    width: "160",
+}, ...__VLS_functionalComponentArgsRest(__VLS_157));
+__VLS_159.slots.default;
+{
+    const { default: __VLS_thisSlot } = __VLS_159.slots;
+    const [scope] = __VLS_getSlotParams(__VLS_thisSlot);
+    (__VLS_ctx.formatTimestamp(scope.row.timestamp));
+}
+var __VLS_159;
+var __VLS_135;
+var __VLS_123;
+const __VLS_160 = {}.ElCard;
 /** @type {[typeof __VLS_components.ElCard, typeof __VLS_components.elCard, typeof __VLS_components.ElCard, typeof __VLS_components.elCard, ]} */ ;
 // @ts-ignore
-const __VLS_165 = __VLS_asFunctionalComponent(__VLS_164, new __VLS_164({
+const __VLS_161 = __VLS_asFunctionalComponent(__VLS_160, new __VLS_160({
     ...{ class: "chart-card" },
 }));
-const __VLS_166 = __VLS_165({
+const __VLS_162 = __VLS_161({
     ...{ class: "chart-card" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_165));
-__VLS_167.slots.default;
+}, ...__VLS_functionalComponentArgsRest(__VLS_161));
+__VLS_163.slots.default;
 {
-    const { header: __VLS_thisSlot } = __VLS_167.slots;
+    const { header: __VLS_thisSlot } = __VLS_163.slots;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
 }
-const __VLS_168 = {}.VChart;
+const __VLS_164 = {}.VChart;
 /** @type {[typeof __VLS_components.VChart, typeof __VLS_components.vChart, ]} */ ;
 // @ts-ignore
-const __VLS_169 = __VLS_asFunctionalComponent(__VLS_168, new __VLS_168({
+const __VLS_165 = __VLS_asFunctionalComponent(__VLS_164, new __VLS_164({
     ...{ class: "trend-chart" },
     option: (__VLS_ctx.trendChartOption),
 }));
-const __VLS_170 = __VLS_169({
+const __VLS_166 = __VLS_165({
     ...{ class: "trend-chart" },
     option: (__VLS_ctx.trendChartOption),
-}, ...__VLS_functionalComponentArgsRest(__VLS_169));
-var __VLS_167;
+}, ...__VLS_functionalComponentArgsRest(__VLS_165));
+var __VLS_163;
 var __VLS_7;
-const __VLS_172 = {}.ElTabPane;
+const __VLS_168 = {}.ElTabPane;
 /** @type {[typeof __VLS_components.ElTabPane, typeof __VLS_components.elTabPane, typeof __VLS_components.ElTabPane, typeof __VLS_components.elTabPane, ]} */ ;
 // @ts-ignore
-const __VLS_173 = __VLS_asFunctionalComponent(__VLS_172, new __VLS_172({
+const __VLS_169 = __VLS_asFunctionalComponent(__VLS_168, new __VLS_168({
     label: "算法参数配置",
     name: "config",
 }));
-const __VLS_174 = __VLS_173({
+const __VLS_170 = __VLS_169({
     label: "算法参数配置",
     name: "config",
-}, ...__VLS_functionalComponentArgsRest(__VLS_173));
-__VLS_175.slots.default;
+}, ...__VLS_functionalComponentArgsRest(__VLS_169));
+__VLS_171.slots.default;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "config-view" },
 });
-const __VLS_176 = {}.ElRow;
+const __VLS_172 = {}.ElRow;
 /** @type {[typeof __VLS_components.ElRow, typeof __VLS_components.elRow, typeof __VLS_components.ElRow, typeof __VLS_components.elRow, ]} */ ;
 // @ts-ignore
-const __VLS_177 = __VLS_asFunctionalComponent(__VLS_176, new __VLS_176({
+const __VLS_173 = __VLS_asFunctionalComponent(__VLS_172, new __VLS_172({
     gutter: (20),
 }));
-const __VLS_178 = __VLS_177({
+const __VLS_174 = __VLS_173({
     gutter: (20),
-}, ...__VLS_functionalComponentArgsRest(__VLS_177));
-__VLS_179.slots.default;
-const __VLS_180 = {}.ElCol;
+}, ...__VLS_functionalComponentArgsRest(__VLS_173));
+__VLS_175.slots.default;
+const __VLS_176 = {}.ElCol;
 /** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
 // @ts-ignore
-const __VLS_181 = __VLS_asFunctionalComponent(__VLS_180, new __VLS_180({
+const __VLS_177 = __VLS_asFunctionalComponent(__VLS_176, new __VLS_176({
     span: (12),
 }));
-const __VLS_182 = __VLS_181({
+const __VLS_178 = __VLS_177({
     span: (12),
-}, ...__VLS_functionalComponentArgsRest(__VLS_181));
-__VLS_183.slots.default;
-const __VLS_184 = {}.ElCard;
+}, ...__VLS_functionalComponentArgsRest(__VLS_177));
+__VLS_179.slots.default;
+const __VLS_180 = {}.ElCard;
 /** @type {[typeof __VLS_components.ElCard, typeof __VLS_components.elCard, typeof __VLS_components.ElCard, typeof __VLS_components.elCard, ]} */ ;
 // @ts-ignore
-const __VLS_185 = __VLS_asFunctionalComponent(__VLS_184, new __VLS_184({}));
-const __VLS_186 = __VLS_185({}, ...__VLS_functionalComponentArgsRest(__VLS_185));
-__VLS_187.slots.default;
+const __VLS_181 = __VLS_asFunctionalComponent(__VLS_180, new __VLS_180({}));
+const __VLS_182 = __VLS_181({}, ...__VLS_functionalComponentArgsRest(__VLS_181));
+__VLS_183.slots.default;
 {
-    const { header: __VLS_thisSlot } = __VLS_187.slots;
+    const { header: __VLS_thisSlot } = __VLS_183.slots;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
 }
-const __VLS_188 = {}.ElForm;
+const __VLS_184 = {}.ElForm;
 /** @type {[typeof __VLS_components.ElForm, typeof __VLS_components.elForm, typeof __VLS_components.ElForm, typeof __VLS_components.elForm, ]} */ ;
 // @ts-ignore
-const __VLS_189 = __VLS_asFunctionalComponent(__VLS_188, new __VLS_188({
+const __VLS_185 = __VLS_asFunctionalComponent(__VLS_184, new __VLS_184({
     model: (__VLS_ctx.algorithmConfig.genetic),
     labelWidth: "120px",
+}));
+const __VLS_186 = __VLS_185({
+    model: (__VLS_ctx.algorithmConfig.genetic),
+    labelWidth: "120px",
+}, ...__VLS_functionalComponentArgsRest(__VLS_185));
+__VLS_187.slots.default;
+const __VLS_188 = {}.ElFormItem;
+/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
+// @ts-ignore
+const __VLS_189 = __VLS_asFunctionalComponent(__VLS_188, new __VLS_188({
+    label: "最大代数",
 }));
 const __VLS_190 = __VLS_189({
-    model: (__VLS_ctx.algorithmConfig.genetic),
-    labelWidth: "120px",
+    label: "最大代数",
 }, ...__VLS_functionalComponentArgsRest(__VLS_189));
 __VLS_191.slots.default;
-const __VLS_192 = {}.ElFormItem;
-/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
+const __VLS_192 = {}.ElInputNumber;
+/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
 // @ts-ignore
 const __VLS_193 = __VLS_asFunctionalComponent(__VLS_192, new __VLS_192({
-    label: "最大代数",
+    modelValue: (__VLS_ctx.optimizationConfig.maxGenerations),
+    min: (10),
+    max: (1000),
+    ...{ style: {} },
 }));
 const __VLS_194 = __VLS_193({
-    label: "最大代数",
+    modelValue: (__VLS_ctx.optimizationConfig.maxGenerations),
+    min: (10),
+    max: (1000),
+    ...{ style: {} },
 }, ...__VLS_functionalComponentArgsRest(__VLS_193));
-__VLS_195.slots.default;
-const __VLS_196 = {}.ElInputNumber;
-/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
+var __VLS_191;
+const __VLS_196 = {}.ElFormItem;
+/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
 // @ts-ignore
 const __VLS_197 = __VLS_asFunctionalComponent(__VLS_196, new __VLS_196({
-    modelValue: (__VLS_ctx.optimizationConfig.maxGenerations),
-    min: (10),
-    max: (1000),
-    ...{ style: {} },
+    label: "种群大小",
 }));
 const __VLS_198 = __VLS_197({
-    modelValue: (__VLS_ctx.optimizationConfig.maxGenerations),
-    min: (10),
-    max: (1000),
-    ...{ style: {} },
+    label: "种群大小",
 }, ...__VLS_functionalComponentArgsRest(__VLS_197));
-var __VLS_195;
-const __VLS_200 = {}.ElFormItem;
-/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
-// @ts-ignore
-const __VLS_201 = __VLS_asFunctionalComponent(__VLS_200, new __VLS_200({
-    label: "种群大小",
-}));
-const __VLS_202 = __VLS_201({
-    label: "种群大小",
-}, ...__VLS_functionalComponentArgsRest(__VLS_201));
-__VLS_203.slots.default;
-const __VLS_204 = {}.ElInputNumber;
+__VLS_199.slots.default;
+const __VLS_200 = {}.ElInputNumber;
 /** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
 // @ts-ignore
-const __VLS_205 = __VLS_asFunctionalComponent(__VLS_204, new __VLS_204({
+const __VLS_201 = __VLS_asFunctionalComponent(__VLS_200, new __VLS_200({
     modelValue: (__VLS_ctx.optimizationConfig.populationSize),
     min: (10),
     max: (200),
     ...{ style: {} },
 }));
-const __VLS_206 = __VLS_205({
+const __VLS_202 = __VLS_201({
     modelValue: (__VLS_ctx.optimizationConfig.populationSize),
     min: (10),
     max: (200),
     ...{ style: {} },
-}, ...__VLS_functionalComponentArgsRest(__VLS_205));
-var __VLS_203;
-const __VLS_208 = {}.ElFormItem;
+}, ...__VLS_functionalComponentArgsRest(__VLS_201));
+var __VLS_199;
+const __VLS_204 = {}.ElFormItem;
 /** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
 // @ts-ignore
-const __VLS_209 = __VLS_asFunctionalComponent(__VLS_208, new __VLS_208({
+const __VLS_205 = __VLS_asFunctionalComponent(__VLS_204, new __VLS_204({
     label: "选择策略",
 }));
-const __VLS_210 = __VLS_209({
+const __VLS_206 = __VLS_205({
     label: "选择策略",
-}, ...__VLS_functionalComponentArgsRest(__VLS_209));
-__VLS_211.slots.default;
-const __VLS_212 = {}.ElSelect;
+}, ...__VLS_functionalComponentArgsRest(__VLS_205));
+__VLS_207.slots.default;
+const __VLS_208 = {}.ElSelect;
 /** @type {[typeof __VLS_components.ElSelect, typeof __VLS_components.elSelect, typeof __VLS_components.ElSelect, typeof __VLS_components.elSelect, ]} */ ;
 // @ts-ignore
-const __VLS_213 = __VLS_asFunctionalComponent(__VLS_212, new __VLS_212({
+const __VLS_209 = __VLS_asFunctionalComponent(__VLS_208, new __VLS_208({
     modelValue: (__VLS_ctx.algorithmConfig.genetic.selection),
     ...{ style: {} },
 }));
-const __VLS_214 = __VLS_213({
+const __VLS_210 = __VLS_209({
     modelValue: (__VLS_ctx.algorithmConfig.genetic.selection),
     ...{ style: {} },
+}, ...__VLS_functionalComponentArgsRest(__VLS_209));
+__VLS_211.slots.default;
+const __VLS_212 = {}.ElOption;
+/** @type {[typeof __VLS_components.ElOption, typeof __VLS_components.elOption, ]} */ ;
+// @ts-ignore
+const __VLS_213 = __VLS_asFunctionalComponent(__VLS_212, new __VLS_212({
+    label: "轮盘赌选择",
+    value: "roulette",
+}));
+const __VLS_214 = __VLS_213({
+    label: "轮盘赌选择",
+    value: "roulette",
 }, ...__VLS_functionalComponentArgsRest(__VLS_213));
-__VLS_215.slots.default;
 const __VLS_216 = {}.ElOption;
 /** @type {[typeof __VLS_components.ElOption, typeof __VLS_components.elOption, ]} */ ;
 // @ts-ignore
 const __VLS_217 = __VLS_asFunctionalComponent(__VLS_216, new __VLS_216({
-    label: "轮盘赌选择",
-    value: "roulette",
+    label: "锦标赛选择",
+    value: "tournament",
 }));
 const __VLS_218 = __VLS_217({
-    label: "轮盘赌选择",
-    value: "roulette",
+    label: "锦标赛选择",
+    value: "tournament",
 }, ...__VLS_functionalComponentArgsRest(__VLS_217));
 const __VLS_220 = {}.ElOption;
 /** @type {[typeof __VLS_components.ElOption, typeof __VLS_components.elOption, ]} */ ;
 // @ts-ignore
 const __VLS_221 = __VLS_asFunctionalComponent(__VLS_220, new __VLS_220({
-    label: "锦标赛选择",
-    value: "tournament",
+    label: "排序选择",
+    value: "rank",
 }));
 const __VLS_222 = __VLS_221({
-    label: "锦标赛选择",
-    value: "tournament",
+    label: "排序选择",
+    value: "rank",
 }, ...__VLS_functionalComponentArgsRest(__VLS_221));
-const __VLS_224 = {}.ElOption;
-/** @type {[typeof __VLS_components.ElOption, typeof __VLS_components.elOption, ]} */ ;
+var __VLS_211;
+var __VLS_207;
+const __VLS_224 = {}.ElFormItem;
+/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
 // @ts-ignore
 const __VLS_225 = __VLS_asFunctionalComponent(__VLS_224, new __VLS_224({
-    label: "排序选择",
-    value: "rank",
+    label: "精英保留率",
 }));
 const __VLS_226 = __VLS_225({
-    label: "排序选择",
-    value: "rank",
+    label: "精英保留率",
 }, ...__VLS_functionalComponentArgsRest(__VLS_225));
-var __VLS_215;
-var __VLS_211;
-const __VLS_228 = {}.ElFormItem;
-/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
-// @ts-ignore
-const __VLS_229 = __VLS_asFunctionalComponent(__VLS_228, new __VLS_228({
-    label: "精英保留率",
-}));
-const __VLS_230 = __VLS_229({
-    label: "精英保留率",
-}, ...__VLS_functionalComponentArgsRest(__VLS_229));
-__VLS_231.slots.default;
-const __VLS_232 = {}.ElSlider;
+__VLS_227.slots.default;
+const __VLS_228 = {}.ElSlider;
 /** @type {[typeof __VLS_components.ElSlider, typeof __VLS_components.elSlider, ]} */ ;
 // @ts-ignore
-const __VLS_233 = __VLS_asFunctionalComponent(__VLS_232, new __VLS_232({
+const __VLS_229 = __VLS_asFunctionalComponent(__VLS_228, new __VLS_228({
     modelValue: (__VLS_ctx.algorithmConfig.genetic.eliteRate),
     min: (0),
     max: (0.5),
     step: (0.05),
     showInput: true,
+}));
+const __VLS_230 = __VLS_229({
+    modelValue: (__VLS_ctx.algorithmConfig.genetic.eliteRate),
+    min: (0),
+    max: (0.5),
+    step: (0.05),
+    showInput: true,
+}, ...__VLS_functionalComponentArgsRest(__VLS_229));
+var __VLS_227;
+const __VLS_232 = {}.ElFormItem;
+/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
+// @ts-ignore
+const __VLS_233 = __VLS_asFunctionalComponent(__VLS_232, new __VLS_232({
+    label: "锦标赛规模",
 }));
 const __VLS_234 = __VLS_233({
-    modelValue: (__VLS_ctx.algorithmConfig.genetic.eliteRate),
-    min: (0),
-    max: (0.5),
-    step: (0.05),
-    showInput: true,
+    label: "锦标赛规模",
 }, ...__VLS_functionalComponentArgsRest(__VLS_233));
-var __VLS_231;
-const __VLS_236 = {}.ElFormItem;
-/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
+__VLS_235.slots.default;
+const __VLS_236 = {}.ElInputNumber;
+/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
 // @ts-ignore
 const __VLS_237 = __VLS_asFunctionalComponent(__VLS_236, new __VLS_236({
-    label: "锦标赛规模",
+    modelValue: (__VLS_ctx.algorithmConfig.genetic.tournamentSize),
+    min: (2),
+    max: (10),
+    ...{ style: {} },
 }));
 const __VLS_238 = __VLS_237({
-    label: "锦标赛规模",
+    modelValue: (__VLS_ctx.algorithmConfig.genetic.tournamentSize),
+    min: (2),
+    max: (10),
+    ...{ style: {} },
 }, ...__VLS_functionalComponentArgsRest(__VLS_237));
-__VLS_239.slots.default;
-const __VLS_240 = {}.ElInputNumber;
-/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
-// @ts-ignore
-const __VLS_241 = __VLS_asFunctionalComponent(__VLS_240, new __VLS_240({
-    modelValue: (__VLS_ctx.algorithmConfig.genetic.tournamentSize),
-    min: (2),
-    max: (10),
-    ...{ style: {} },
-}));
-const __VLS_242 = __VLS_241({
-    modelValue: (__VLS_ctx.algorithmConfig.genetic.tournamentSize),
-    min: (2),
-    max: (10),
-    ...{ style: {} },
-}, ...__VLS_functionalComponentArgsRest(__VLS_241));
-var __VLS_239;
-var __VLS_191;
+var __VLS_235;
 var __VLS_187;
 var __VLS_183;
-const __VLS_244 = {}.ElCol;
+var __VLS_179;
+const __VLS_240 = {}.ElCol;
 /** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
 // @ts-ignore
-const __VLS_245 = __VLS_asFunctionalComponent(__VLS_244, new __VLS_244({
+const __VLS_241 = __VLS_asFunctionalComponent(__VLS_240, new __VLS_240({
     span: (12),
 }));
-const __VLS_246 = __VLS_245({
+const __VLS_242 = __VLS_241({
     span: (12),
-}, ...__VLS_functionalComponentArgsRest(__VLS_245));
-__VLS_247.slots.default;
-const __VLS_248 = {}.ElCard;
+}, ...__VLS_functionalComponentArgsRest(__VLS_241));
+__VLS_243.slots.default;
+const __VLS_244 = {}.ElCard;
 /** @type {[typeof __VLS_components.ElCard, typeof __VLS_components.elCard, typeof __VLS_components.ElCard, typeof __VLS_components.elCard, ]} */ ;
 // @ts-ignore
-const __VLS_249 = __VLS_asFunctionalComponent(__VLS_248, new __VLS_248({}));
-const __VLS_250 = __VLS_249({}, ...__VLS_functionalComponentArgsRest(__VLS_249));
-__VLS_251.slots.default;
+const __VLS_245 = __VLS_asFunctionalComponent(__VLS_244, new __VLS_244({}));
+const __VLS_246 = __VLS_245({}, ...__VLS_functionalComponentArgsRest(__VLS_245));
+__VLS_247.slots.default;
 {
-    const { header: __VLS_thisSlot } = __VLS_251.slots;
+    const { header: __VLS_thisSlot } = __VLS_247.slots;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
 }
-const __VLS_252 = {}.ElForm;
+const __VLS_248 = {}.ElForm;
 /** @type {[typeof __VLS_components.ElForm, typeof __VLS_components.elForm, typeof __VLS_components.ElForm, typeof __VLS_components.elForm, ]} */ ;
 // @ts-ignore
-const __VLS_253 = __VLS_asFunctionalComponent(__VLS_252, new __VLS_252({
+const __VLS_249 = __VLS_asFunctionalComponent(__VLS_248, new __VLS_248({
     model: (__VLS_ctx.algorithmConfig.gradient),
     labelWidth: "120px",
+}));
+const __VLS_250 = __VLS_249({
+    model: (__VLS_ctx.algorithmConfig.gradient),
+    labelWidth: "120px",
+}, ...__VLS_functionalComponentArgsRest(__VLS_249));
+__VLS_251.slots.default;
+const __VLS_252 = {}.ElFormItem;
+/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
+// @ts-ignore
+const __VLS_253 = __VLS_asFunctionalComponent(__VLS_252, new __VLS_252({
+    label: "EMA参数",
 }));
 const __VLS_254 = __VLS_253({
-    model: (__VLS_ctx.algorithmConfig.gradient),
-    labelWidth: "120px",
+    label: "EMA参数",
 }, ...__VLS_functionalComponentArgsRest(__VLS_253));
 __VLS_255.slots.default;
-const __VLS_256 = {}.ElFormItem;
-/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
+const __VLS_256 = {}.ElInputNumber;
+/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
 // @ts-ignore
 const __VLS_257 = __VLS_asFunctionalComponent(__VLS_256, new __VLS_256({
-    label: "EMA参数",
+    modelValue: (__VLS_ctx.algorithmConfig.gradient.learningRate),
+    min: (0.0),
+    max: (1.0),
+    step: (0.01),
+    ...{ style: {} },
 }));
 const __VLS_258 = __VLS_257({
-    label: "EMA参数",
+    modelValue: (__VLS_ctx.algorithmConfig.gradient.learningRate),
+    min: (0.0),
+    max: (1.0),
+    step: (0.01),
+    ...{ style: {} },
 }, ...__VLS_functionalComponentArgsRest(__VLS_257));
-__VLS_259.slots.default;
-const __VLS_260 = {}.ElInputNumber;
-/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
-// @ts-ignore
-const __VLS_261 = __VLS_asFunctionalComponent(__VLS_260, new __VLS_260({
-    modelValue: (__VLS_ctx.algorithmConfig.gradient.learningRate),
-    min: (0.0),
-    max: (1.0),
-    step: (0.01),
-    ...{ style: {} },
-}));
-const __VLS_262 = __VLS_261({
-    modelValue: (__VLS_ctx.algorithmConfig.gradient.learningRate),
-    min: (0.0),
-    max: (1.0),
-    step: (0.01),
-    ...{ style: {} },
-}, ...__VLS_functionalComponentArgsRest(__VLS_261));
-var __VLS_259;
-const __VLS_264 = {}.ElFormItem;
+var __VLS_255;
+const __VLS_260 = {}.ElFormItem;
 /** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
 // @ts-ignore
-const __VLS_265 = __VLS_asFunctionalComponent(__VLS_264, new __VLS_264({
+const __VLS_261 = __VLS_asFunctionalComponent(__VLS_260, new __VLS_260({
     label: "参数α",
 }));
-const __VLS_266 = __VLS_265({
+const __VLS_262 = __VLS_261({
     label: "参数α",
-}, ...__VLS_functionalComponentArgsRest(__VLS_265));
-__VLS_267.slots.default;
-const __VLS_268 = {}.ElInputNumber;
+}, ...__VLS_functionalComponentArgsRest(__VLS_261));
+__VLS_263.slots.default;
+const __VLS_264 = {}.ElInputNumber;
 /** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
 // @ts-ignore
-const __VLS_269 = __VLS_asFunctionalComponent(__VLS_268, new __VLS_268({
+const __VLS_265 = __VLS_asFunctionalComponent(__VLS_264, new __VLS_264({
     modelValue: (__VLS_ctx.algorithmConfig.gradient.batchSize),
     min: (0.0),
     max: (1.0),
     step: (0.01),
+    ...{ style: {} },
+}));
+const __VLS_266 = __VLS_265({
+    modelValue: (__VLS_ctx.algorithmConfig.gradient.batchSize),
+    min: (0.0),
+    max: (1.0),
+    step: (0.01),
+    ...{ style: {} },
+}, ...__VLS_functionalComponentArgsRest(__VLS_265));
+var __VLS_263;
+var __VLS_251;
+var __VLS_247;
+var __VLS_243;
+var __VLS_175;
+const __VLS_268 = {}.ElRow;
+/** @type {[typeof __VLS_components.ElRow, typeof __VLS_components.elRow, typeof __VLS_components.ElRow, typeof __VLS_components.elRow, ]} */ ;
+// @ts-ignore
+const __VLS_269 = __VLS_asFunctionalComponent(__VLS_268, new __VLS_268({
+    gutter: (20),
     ...{ style: {} },
 }));
 const __VLS_270 = __VLS_269({
-    modelValue: (__VLS_ctx.algorithmConfig.gradient.batchSize),
-    min: (0.0),
-    max: (1.0),
-    step: (0.01),
+    gutter: (20),
     ...{ style: {} },
 }, ...__VLS_functionalComponentArgsRest(__VLS_269));
-var __VLS_267;
-var __VLS_255;
-var __VLS_251;
-var __VLS_247;
-var __VLS_179;
-const __VLS_272 = {}.ElRow;
-/** @type {[typeof __VLS_components.ElRow, typeof __VLS_components.elRow, typeof __VLS_components.ElRow, typeof __VLS_components.elRow, ]} */ ;
+__VLS_271.slots.default;
+const __VLS_272 = {}.ElCol;
+/** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
 // @ts-ignore
 const __VLS_273 = __VLS_asFunctionalComponent(__VLS_272, new __VLS_272({
-    gutter: (20),
-    ...{ style: {} },
+    span: (24),
 }));
 const __VLS_274 = __VLS_273({
-    gutter: (20),
-    ...{ style: {} },
+    span: (24),
 }, ...__VLS_functionalComponentArgsRest(__VLS_273));
 __VLS_275.slots.default;
-const __VLS_276 = {}.ElCol;
-/** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
-// @ts-ignore
-const __VLS_277 = __VLS_asFunctionalComponent(__VLS_276, new __VLS_276({
-    span: (24),
-}));
-const __VLS_278 = __VLS_277({
-    span: (24),
-}, ...__VLS_functionalComponentArgsRest(__VLS_277));
-__VLS_279.slots.default;
-const __VLS_280 = {}.ElCard;
+const __VLS_276 = {}.ElCard;
 /** @type {[typeof __VLS_components.ElCard, typeof __VLS_components.elCard, typeof __VLS_components.ElCard, typeof __VLS_components.elCard, ]} */ ;
 // @ts-ignore
-const __VLS_281 = __VLS_asFunctionalComponent(__VLS_280, new __VLS_280({}));
-const __VLS_282 = __VLS_281({}, ...__VLS_functionalComponentArgsRest(__VLS_281));
-__VLS_283.slots.default;
+const __VLS_277 = __VLS_asFunctionalComponent(__VLS_276, new __VLS_276({}));
+const __VLS_278 = __VLS_277({}, ...__VLS_functionalComponentArgsRest(__VLS_277));
+__VLS_279.slots.default;
 {
-    const { header: __VLS_thisSlot } = __VLS_283.slots;
+    const { header: __VLS_thisSlot } = __VLS_279.slots;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
 }
-const __VLS_284 = {}.ElForm;
+const __VLS_280 = {}.ElForm;
 /** @type {[typeof __VLS_components.ElForm, typeof __VLS_components.elForm, typeof __VLS_components.ElForm, typeof __VLS_components.elForm, ]} */ ;
 // @ts-ignore
-const __VLS_285 = __VLS_asFunctionalComponent(__VLS_284, new __VLS_284({
+const __VLS_281 = __VLS_asFunctionalComponent(__VLS_280, new __VLS_280({
     model: (__VLS_ctx.algorithmConfig.general),
     labelWidth: "120px",
 }));
-const __VLS_286 = __VLS_285({
+const __VLS_282 = __VLS_281({
     model: (__VLS_ctx.algorithmConfig.general),
     labelWidth: "120px",
-}, ...__VLS_functionalComponentArgsRest(__VLS_285));
-__VLS_287.slots.default;
-const __VLS_288 = {}.ElRow;
+}, ...__VLS_functionalComponentArgsRest(__VLS_281));
+__VLS_283.slots.default;
+const __VLS_284 = {}.ElRow;
 /** @type {[typeof __VLS_components.ElRow, typeof __VLS_components.elRow, typeof __VLS_components.ElRow, typeof __VLS_components.elRow, ]} */ ;
 // @ts-ignore
-const __VLS_289 = __VLS_asFunctionalComponent(__VLS_288, new __VLS_288({
+const __VLS_285 = __VLS_asFunctionalComponent(__VLS_284, new __VLS_284({
     gutter: (20),
+}));
+const __VLS_286 = __VLS_285({
+    gutter: (20),
+}, ...__VLS_functionalComponentArgsRest(__VLS_285));
+__VLS_287.slots.default;
+const __VLS_288 = {}.ElCol;
+/** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
+// @ts-ignore
+const __VLS_289 = __VLS_asFunctionalComponent(__VLS_288, new __VLS_288({
+    span: (8),
 }));
 const __VLS_290 = __VLS_289({
-    gutter: (20),
+    span: (8),
 }, ...__VLS_functionalComponentArgsRest(__VLS_289));
 __VLS_291.slots.default;
-const __VLS_292 = {}.ElCol;
-/** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
+const __VLS_292 = {}.ElFormItem;
+/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
 // @ts-ignore
 const __VLS_293 = __VLS_asFunctionalComponent(__VLS_292, new __VLS_292({
-    span: (8),
+    label: "收敛阈值",
 }));
 const __VLS_294 = __VLS_293({
-    span: (8),
+    label: "收敛阈值",
 }, ...__VLS_functionalComponentArgsRest(__VLS_293));
 __VLS_295.slots.default;
-const __VLS_296 = {}.ElFormItem;
-/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
+const __VLS_296 = {}.ElInputNumber;
+/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
 // @ts-ignore
 const __VLS_297 = __VLS_asFunctionalComponent(__VLS_296, new __VLS_296({
-    label: "收敛阈值",
+    modelValue: (__VLS_ctx.algorithmConfig.general.convergenceThreshold),
+    min: (0.001),
+    max: (1),
+    step: (0.001),
+    ...{ style: {} },
 }));
 const __VLS_298 = __VLS_297({
-    label: "收敛阈值",
+    modelValue: (__VLS_ctx.algorithmConfig.general.convergenceThreshold),
+    min: (0.001),
+    max: (1),
+    step: (0.001),
+    ...{ style: {} },
 }, ...__VLS_functionalComponentArgsRest(__VLS_297));
-__VLS_299.slots.default;
-const __VLS_300 = {}.ElInputNumber;
-/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
+var __VLS_295;
+var __VLS_291;
+const __VLS_300 = {}.ElCol;
+/** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
 // @ts-ignore
 const __VLS_301 = __VLS_asFunctionalComponent(__VLS_300, new __VLS_300({
-    modelValue: (__VLS_ctx.algorithmConfig.general.convergenceThreshold),
-    min: (0.001),
-    max: (1),
-    step: (0.001),
-    ...{ style: {} },
+    span: (8),
 }));
 const __VLS_302 = __VLS_301({
-    modelValue: (__VLS_ctx.algorithmConfig.general.convergenceThreshold),
-    min: (0.001),
-    max: (1),
-    step: (0.001),
-    ...{ style: {} },
+    span: (8),
 }, ...__VLS_functionalComponentArgsRest(__VLS_301));
-var __VLS_299;
-var __VLS_295;
-const __VLS_304 = {}.ElCol;
-/** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
+__VLS_303.slots.default;
+const __VLS_304 = {}.ElFormItem;
+/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
 // @ts-ignore
 const __VLS_305 = __VLS_asFunctionalComponent(__VLS_304, new __VLS_304({
-    span: (8),
+    label: "停滞代数",
 }));
 const __VLS_306 = __VLS_305({
-    span: (8),
+    label: "停滞代数",
 }, ...__VLS_functionalComponentArgsRest(__VLS_305));
 __VLS_307.slots.default;
-const __VLS_308 = {}.ElFormItem;
-/** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
+const __VLS_308 = {}.ElInputNumber;
+/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
 // @ts-ignore
 const __VLS_309 = __VLS_asFunctionalComponent(__VLS_308, new __VLS_308({
-    label: "停滞代数",
+    modelValue: (__VLS_ctx.algorithmConfig.general.stagnationLimit),
+    min: (5),
+    max: (100),
+    ...{ style: {} },
 }));
 const __VLS_310 = __VLS_309({
-    label: "停滞代数",
+    modelValue: (__VLS_ctx.algorithmConfig.general.stagnationLimit),
+    min: (5),
+    max: (100),
+    ...{ style: {} },
 }, ...__VLS_functionalComponentArgsRest(__VLS_309));
-__VLS_311.slots.default;
-const __VLS_312 = {}.ElInputNumber;
-/** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
-// @ts-ignore
-const __VLS_313 = __VLS_asFunctionalComponent(__VLS_312, new __VLS_312({
-    modelValue: (__VLS_ctx.algorithmConfig.general.stagnationLimit),
-    min: (5),
-    max: (100),
-    ...{ style: {} },
-}));
-const __VLS_314 = __VLS_313({
-    modelValue: (__VLS_ctx.algorithmConfig.general.stagnationLimit),
-    min: (5),
-    max: (100),
-    ...{ style: {} },
-}, ...__VLS_functionalComponentArgsRest(__VLS_313));
-var __VLS_311;
 var __VLS_307;
-const __VLS_316 = {}.ElCol;
+var __VLS_303;
+const __VLS_312 = {}.ElCol;
 /** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
 // @ts-ignore
-const __VLS_317 = __VLS_asFunctionalComponent(__VLS_316, new __VLS_316({
+const __VLS_313 = __VLS_asFunctionalComponent(__VLS_312, new __VLS_312({
     span: (8),
 }));
-const __VLS_318 = __VLS_317({
+const __VLS_314 = __VLS_313({
     span: (8),
-}, ...__VLS_functionalComponentArgsRest(__VLS_317));
-__VLS_319.slots.default;
-const __VLS_320 = {}.ElFormItem;
+}, ...__VLS_functionalComponentArgsRest(__VLS_313));
+__VLS_315.slots.default;
+const __VLS_316 = {}.ElFormItem;
 /** @type {[typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, typeof __VLS_components.ElFormItem, typeof __VLS_components.elFormItem, ]} */ ;
 // @ts-ignore
-const __VLS_321 = __VLS_asFunctionalComponent(__VLS_320, new __VLS_320({
+const __VLS_317 = __VLS_asFunctionalComponent(__VLS_316, new __VLS_316({
     label: "随机种子",
 }));
-const __VLS_322 = __VLS_321({
+const __VLS_318 = __VLS_317({
     label: "随机种子",
-}, ...__VLS_functionalComponentArgsRest(__VLS_321));
-__VLS_323.slots.default;
-const __VLS_324 = {}.ElInputNumber;
+}, ...__VLS_functionalComponentArgsRest(__VLS_317));
+__VLS_319.slots.default;
+const __VLS_320 = {}.ElInputNumber;
 /** @type {[typeof __VLS_components.ElInputNumber, typeof __VLS_components.elInputNumber, ]} */ ;
 // @ts-ignore
-const __VLS_325 = __VLS_asFunctionalComponent(__VLS_324, new __VLS_324({
+const __VLS_321 = __VLS_asFunctionalComponent(__VLS_320, new __VLS_320({
     modelValue: (__VLS_ctx.algorithmConfig.general.randomSeed),
     min: (0),
     max: (999999),
     ...{ style: {} },
 }));
-const __VLS_326 = __VLS_325({
+const __VLS_322 = __VLS_321({
     modelValue: (__VLS_ctx.algorithmConfig.general.randomSeed),
     min: (0),
     max: (999999),
     ...{ style: {} },
-}, ...__VLS_functionalComponentArgsRest(__VLS_325));
-var __VLS_323;
+}, ...__VLS_functionalComponentArgsRest(__VLS_321));
 var __VLS_319;
-var __VLS_291;
+var __VLS_315;
 var __VLS_287;
+var __VLS_283;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "config-actions" },
 });
-const __VLS_328 = {}.ElSpace;
+const __VLS_324 = {}.ElSpace;
 /** @type {[typeof __VLS_components.ElSpace, typeof __VLS_components.elSpace, typeof __VLS_components.ElSpace, typeof __VLS_components.elSpace, ]} */ ;
 // @ts-ignore
-const __VLS_329 = __VLS_asFunctionalComponent(__VLS_328, new __VLS_328({}));
-const __VLS_330 = __VLS_329({}, ...__VLS_functionalComponentArgsRest(__VLS_329));
-__VLS_331.slots.default;
-const __VLS_332 = {}.ElButton;
+const __VLS_325 = __VLS_asFunctionalComponent(__VLS_324, new __VLS_324({}));
+const __VLS_326 = __VLS_325({}, ...__VLS_functionalComponentArgsRest(__VLS_325));
+__VLS_327.slots.default;
+const __VLS_328 = {}.ElButton;
 /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
 // @ts-ignore
-const __VLS_333 = __VLS_asFunctionalComponent(__VLS_332, new __VLS_332({
+const __VLS_329 = __VLS_asFunctionalComponent(__VLS_328, new __VLS_328({
     ...{ 'onClick': {} },
     type: "primary",
 }));
-const __VLS_334 = __VLS_333({
+const __VLS_330 = __VLS_329({
     ...{ 'onClick': {} },
     type: "primary",
-}, ...__VLS_functionalComponentArgsRest(__VLS_333));
-let __VLS_336;
-let __VLS_337;
-let __VLS_338;
-const __VLS_339 = {
+}, ...__VLS_functionalComponentArgsRest(__VLS_329));
+let __VLS_332;
+let __VLS_333;
+let __VLS_334;
+const __VLS_335 = {
     onClick: (__VLS_ctx.saveConfig)
 };
-__VLS_335.slots.default;
-var __VLS_335;
-const __VLS_340 = {}.ElButton;
+__VLS_331.slots.default;
+var __VLS_331;
+const __VLS_336 = {}.ElButton;
 /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
 // @ts-ignore
-const __VLS_341 = __VLS_asFunctionalComponent(__VLS_340, new __VLS_340({
+const __VLS_337 = __VLS_asFunctionalComponent(__VLS_336, new __VLS_336({
     ...{ 'onClick': {} },
 }));
-const __VLS_342 = __VLS_341({
+const __VLS_338 = __VLS_337({
     ...{ 'onClick': {} },
-}, ...__VLS_functionalComponentArgsRest(__VLS_341));
-let __VLS_344;
-let __VLS_345;
-let __VLS_346;
-const __VLS_347 = {
+}, ...__VLS_functionalComponentArgsRest(__VLS_337));
+let __VLS_340;
+let __VLS_341;
+let __VLS_342;
+const __VLS_343 = {
     onClick: (__VLS_ctx.resetConfig)
 };
-__VLS_343.slots.default;
-var __VLS_343;
-const __VLS_348 = {}.ElButton;
+__VLS_339.slots.default;
+var __VLS_339;
+const __VLS_344 = {}.ElButton;
 /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
 // @ts-ignore
-const __VLS_349 = __VLS_asFunctionalComponent(__VLS_348, new __VLS_348({
+const __VLS_345 = __VLS_asFunctionalComponent(__VLS_344, new __VLS_344({
     ...{ 'onClick': {} },
 }));
-const __VLS_350 = __VLS_349({
+const __VLS_346 = __VLS_345({
     ...{ 'onClick': {} },
-}, ...__VLS_functionalComponentArgsRest(__VLS_349));
-let __VLS_352;
-let __VLS_353;
-let __VLS_354;
-const __VLS_355 = {
+}, ...__VLS_functionalComponentArgsRest(__VLS_345));
+let __VLS_348;
+let __VLS_349;
+let __VLS_350;
+const __VLS_351 = {
     onClick: (__VLS_ctx.loadPresetConfig)
 };
-__VLS_351.slots.default;
-var __VLS_351;
-var __VLS_331;
-var __VLS_283;
+__VLS_347.slots.default;
+var __VLS_347;
+var __VLS_327;
 var __VLS_279;
 var __VLS_275;
-var __VLS_175;
+var __VLS_271;
+var __VLS_171;
 var __VLS_3;
-const __VLS_356 = {}.ElDialog;
+const __VLS_352 = {}.ElDialog;
 /** @type {[typeof __VLS_components.ElDialog, typeof __VLS_components.elDialog, typeof __VLS_components.ElDialog, typeof __VLS_components.elDialog, ]} */ ;
 // @ts-ignore
-const __VLS_357 = __VLS_asFunctionalComponent(__VLS_356, new __VLS_356({
+const __VLS_353 = __VLS_asFunctionalComponent(__VLS_352, new __VLS_352({
     modelValue: (__VLS_ctx.allResultsVisible),
     title: "全部优化结果",
     width: "80%",
     top: "5vh",
 }));
-const __VLS_358 = __VLS_357({
+const __VLS_354 = __VLS_353({
     modelValue: (__VLS_ctx.allResultsVisible),
     title: "全部优化结果",
     width: "80%",
     top: "5vh",
-}, ...__VLS_functionalComponentArgsRest(__VLS_357));
-__VLS_359.slots.default;
-const __VLS_360 = {}.ElTable;
+}, ...__VLS_functionalComponentArgsRest(__VLS_353));
+__VLS_355.slots.default;
+const __VLS_356 = {}.ElTable;
 /** @type {[typeof __VLS_components.ElTable, typeof __VLS_components.elTable, typeof __VLS_components.ElTable, typeof __VLS_components.elTable, ]} */ ;
 // @ts-ignore
-const __VLS_361 = __VLS_asFunctionalComponent(__VLS_360, new __VLS_360({
+const __VLS_357 = __VLS_asFunctionalComponent(__VLS_356, new __VLS_356({
     data: (__VLS_ctx.allResults),
     height: "400",
     stripe: true,
 }));
-const __VLS_362 = __VLS_361({
+const __VLS_358 = __VLS_357({
     data: (__VLS_ctx.allResults),
     height: "400",
     stripe: true,
-}, ...__VLS_functionalComponentArgsRest(__VLS_361));
-__VLS_363.slots.default;
-const __VLS_364 = {}.ElTableColumn;
+}, ...__VLS_functionalComponentArgsRest(__VLS_357));
+__VLS_359.slots.default;
+const __VLS_360 = {}.ElTableColumn;
 /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
-const __VLS_365 = __VLS_asFunctionalComponent(__VLS_364, new __VLS_364({
+const __VLS_361 = __VLS_asFunctionalComponent(__VLS_360, new __VLS_360({
     prop: "generation",
     label: "代数",
     width: "80",
 }));
-const __VLS_366 = __VLS_365({
+const __VLS_362 = __VLS_361({
     prop: "generation",
     label: "代数",
     width: "80",
-}, ...__VLS_functionalComponentArgsRest(__VLS_365));
-const __VLS_368 = {}.ElTableColumn;
+}, ...__VLS_functionalComponentArgsRest(__VLS_361));
+const __VLS_364 = {}.ElTableColumn;
 /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
-const __VLS_369 = __VLS_asFunctionalComponent(__VLS_368, new __VLS_368({
+const __VLS_365 = __VLS_asFunctionalComponent(__VLS_364, new __VLS_364({
     prop: "score",
     label: "得分",
     width: "100",
 }));
-const __VLS_370 = __VLS_369({
+const __VLS_366 = __VLS_365({
     prop: "score",
     label: "得分",
     width: "100",
-}, ...__VLS_functionalComponentArgsRest(__VLS_369));
-__VLS_371.slots.default;
+}, ...__VLS_functionalComponentArgsRest(__VLS_365));
+__VLS_367.slots.default;
 {
-    const { default: __VLS_thisSlot } = __VLS_371.slots;
+    const { default: __VLS_thisSlot } = __VLS_367.slots;
     const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
         ...{ class: (__VLS_ctx.getScoreClass(row.score)) },
     });
     (row.score.toFixed(2));
 }
-var __VLS_371;
-const __VLS_372 = {}.ElTableColumn;
+var __VLS_367;
+const __VLS_368 = {}.ElTableColumn;
 /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
-const __VLS_373 = __VLS_asFunctionalComponent(__VLS_372, new __VLS_372({
+const __VLS_369 = __VLS_asFunctionalComponent(__VLS_368, new __VLS_368({
     prop: "improvement",
     label: "改进值",
     width: "100",
 }));
-const __VLS_374 = __VLS_373({
+const __VLS_370 = __VLS_369({
     prop: "improvement",
     label: "改进值",
     width: "100",
-}, ...__VLS_functionalComponentArgsRest(__VLS_373));
-__VLS_375.slots.default;
+}, ...__VLS_functionalComponentArgsRest(__VLS_369));
+__VLS_371.slots.default;
 {
-    const { default: __VLS_thisSlot } = __VLS_375.slots;
+    const { default: __VLS_thisSlot } = __VLS_371.slots;
     const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
     if (row.improvement !== null) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
@@ -1632,110 +2012,116 @@ __VLS_375.slots.default;
         });
     }
 }
-var __VLS_375;
-const __VLS_376 = {}.ElTableColumn;
+var __VLS_371;
+const __VLS_372 = {}.ElTableColumn;
 /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
-const __VLS_377 = __VLS_asFunctionalComponent(__VLS_376, new __VLS_376({
+const __VLS_373 = __VLS_asFunctionalComponent(__VLS_372, new __VLS_372({
     prop: "tokens",
     label: "触发令牌",
     minWidth: "250",
 }));
-const __VLS_378 = __VLS_377({
+const __VLS_374 = __VLS_373({
     prop: "tokens",
     label: "触发令牌",
     minWidth: "250",
-}, ...__VLS_functionalComponentArgsRest(__VLS_377));
-__VLS_379.slots.default;
+}, ...__VLS_functionalComponentArgsRest(__VLS_373));
+__VLS_375.slots.default;
 {
-    const { default: __VLS_thisSlot } = __VLS_379.slots;
+    const { default: __VLS_thisSlot } = __VLS_375.slots;
     const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
     for (const [token, index] of __VLS_getVForSourceType((row.tokens))) {
-        const __VLS_380 = {}.ElTag;
+        const __VLS_376 = {}.ElTag;
         /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
         // @ts-ignore
-        const __VLS_381 = __VLS_asFunctionalComponent(__VLS_380, new __VLS_380({
+        const __VLS_377 = __VLS_asFunctionalComponent(__VLS_376, new __VLS_376({
             key: (index),
             size: "small",
             ...{ class: "token-tag" },
         }));
-        const __VLS_382 = __VLS_381({
+        const __VLS_378 = __VLS_377({
             key: (index),
             size: "small",
             ...{ class: "token-tag" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_381));
-        __VLS_383.slots.default;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_377));
+        __VLS_379.slots.default;
         (token);
-        var __VLS_383;
+        var __VLS_379;
     }
 }
-var __VLS_379;
-const __VLS_384 = {}.ElTableColumn;
-/** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
+var __VLS_375;
+const __VLS_380 = {}.ElTableColumn;
+/** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
 // @ts-ignore
-const __VLS_385 = __VLS_asFunctionalComponent(__VLS_384, new __VLS_384({
+const __VLS_381 = __VLS_asFunctionalComponent(__VLS_380, new __VLS_380({
     prop: "timestamp",
     label: "时间",
-    width: "100",
+    width: "160",
 }));
-const __VLS_386 = __VLS_385({
+const __VLS_382 = __VLS_381({
     prop: "timestamp",
     label: "时间",
-    width: "100",
-}, ...__VLS_functionalComponentArgsRest(__VLS_385));
-var __VLS_363;
+    width: "160",
+}, ...__VLS_functionalComponentArgsRest(__VLS_381));
+__VLS_383.slots.default;
 {
-    const { footer: __VLS_thisSlot } = __VLS_359.slots;
+    const { default: __VLS_thisSlot } = __VLS_383.slots;
+    const [scope] = __VLS_getSlotParams(__VLS_thisSlot);
+    (__VLS_ctx.formatTimestamp(scope.row.timestamp));
+}
+var __VLS_383;
+var __VLS_359;
+{
+    const { footer: __VLS_thisSlot } = __VLS_355.slots;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "dialog-footer" },
     });
-    const __VLS_388 = {}.ElButton;
+    const __VLS_384 = {}.ElButton;
     /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
     // @ts-ignore
-    const __VLS_389 = __VLS_asFunctionalComponent(__VLS_388, new __VLS_388({
+    const __VLS_385 = __VLS_asFunctionalComponent(__VLS_384, new __VLS_384({
         ...{ 'onClick': {} },
     }));
-    const __VLS_390 = __VLS_389({
+    const __VLS_386 = __VLS_385({
         ...{ 'onClick': {} },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_389));
-    let __VLS_392;
-    let __VLS_393;
-    let __VLS_394;
-    const __VLS_395 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_385));
+    let __VLS_388;
+    let __VLS_389;
+    let __VLS_390;
+    const __VLS_391 = {
         onClick: (...[$event]) => {
             __VLS_ctx.allResultsVisible = false;
         }
     };
-    __VLS_391.slots.default;
-    var __VLS_391;
-    const __VLS_396 = {}.ElButton;
+    __VLS_387.slots.default;
+    var __VLS_387;
+    const __VLS_392 = {}.ElButton;
     /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
     // @ts-ignore
-    const __VLS_397 = __VLS_asFunctionalComponent(__VLS_396, new __VLS_396({
+    const __VLS_393 = __VLS_asFunctionalComponent(__VLS_392, new __VLS_392({
         ...{ 'onClick': {} },
         type: "primary",
     }));
-    const __VLS_398 = __VLS_397({
+    const __VLS_394 = __VLS_393({
         ...{ 'onClick': {} },
         type: "primary",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_397));
-    let __VLS_400;
-    let __VLS_401;
-    let __VLS_402;
-    const __VLS_403 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_393));
+    let __VLS_396;
+    let __VLS_397;
+    let __VLS_398;
+    const __VLS_399 = {
         onClick: (__VLS_ctx.exportAllResults)
     };
-    __VLS_399.slots.default;
-    var __VLS_399;
+    __VLS_395.slots.default;
+    var __VLS_395;
 }
-var __VLS_359;
+var __VLS_355;
 /** @type {__VLS_StyleScopedClasses['l4-detection']} */ ;
 /** @type {__VLS_StyleScopedClasses['optimization-view']} */ ;
 /** @type {__VLS_StyleScopedClasses['config-card']} */ ;
 /** @type {__VLS_StyleScopedClasses['card-header']} */ ;
 /** @type {__VLS_StyleScopedClasses['progress-card']} */ ;
 /** @type {__VLS_StyleScopedClasses['progress-bar']} */ ;
-/** @type {__VLS_StyleScopedClasses['is-loading']} */ ;
 /** @type {__VLS_StyleScopedClasses['progress-text']} */ ;
 /** @type {__VLS_StyleScopedClasses['current-best']} */ ;
 /** @type {__VLS_StyleScopedClasses['trigger-info']} */ ;
@@ -1761,6 +2147,8 @@ const __VLS_self = (await import('vue')).defineComponent({
             VChart: VChart,
             activeTab: activeTab,
             isOptimizing: isOptimizing,
+            isPaused: isPaused,
+            currentOptimizationId: currentOptimizationId,
             optimizationConfig: optimizationConfig,
             algorithmConfig: algorithmConfig,
             currentGeneration: currentGeneration,
@@ -1771,11 +2159,14 @@ const __VLS_self = (await import('vue')).defineComponent({
             allResults: allResults,
             allResultsVisible: allResultsVisible,
             recentResults: recentResults,
+            progressPercentage: progressPercentage,
+            formatTimestamp: formatTimestamp,
             trendChartOption: trendChartOption,
+            getProgressColor: getProgressColor,
             getScoreClass: getScoreClass,
             getImprovementClass: getImprovementClass,
             startOptimization: startOptimization,
-            pauseOptimization: pauseOptimization,
+            toggleOptimization: toggleOptimization,
             resetOptimization: resetOptimization,
             viewAllResults: viewAllResults,
             exportAllResults: exportAllResults,

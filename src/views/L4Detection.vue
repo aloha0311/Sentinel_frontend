@@ -443,7 +443,6 @@
 // 1. 依赖导入
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useActivityStore } from '../stores/activityStore'
 import { useDataStore } from '../stores/dataStore'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -467,11 +466,13 @@ use([
   GridComponent
 ])
 
-// 3. Store与响应式数据
-const activityStore = useActivityStore()
+// 3. API基础配置
+const API_BASE_URL = 'http://localhost:3001'
+
+// 4. Store与响应式数据
 const dataStore = useDataStore()
 
-// 4. 响应式状态定义
+// 5. 响应式状态定义
 const activeTab = ref('optimization')
 const isOptimizing = ref(false)
 const isPaused = ref(false)
@@ -520,6 +521,197 @@ const recentResults = ref<Array<{
   timestamp: string
   improvement: number | null
 }>>([])
+
+// 5.1 进度持久化相关
+const L4_PROGRESS_KEY = 'l4_optimization_progress'
+
+// 保存优化进度到localStorage
+const saveOptimizationProgress = () => {
+  const progressData = {
+    isOptimizing: isOptimizing.value,
+    isPaused: isPaused.value,
+    currentOptimizationId: currentOptimizationId.value,
+    currentGeneration: currentGeneration.value,
+    bestScore: bestScore.value,
+    runningTime: runningTime.value,
+    bestTriggerTokens: bestTriggerTokens.value,
+    currentGenerationData: currentGenerationData.value,
+    allResults: allResults.value,
+    recentResults: recentResults.value,
+    optimizationConfig: optimizationConfig.value,
+    algorithmConfig: algorithmConfig.value,
+    timestamp: new Date().toISOString()
+  }
+  
+  try {
+    localStorage.setItem(L4_PROGRESS_KEY, JSON.stringify(progressData))
+    console.log('L4优化进度已保存')
+  } catch (error) {
+    console.error('保存L4优化进度失败:', error)
+  }
+}
+
+// 从localStorage恢复优化进度
+const loadOptimizationProgress = () => {
+  try {
+    const storedData = localStorage.getItem(L4_PROGRESS_KEY)
+    if (storedData) {
+      const progressData = JSON.parse(storedData)
+      
+      // 检查数据是否过期（超过24小时）
+      const savedTime = new Date(progressData.timestamp)
+      const now = new Date()
+      const hoursDiff = (now.getTime() - savedTime.getTime()) / (1000 * 60 * 60)
+      
+      if (hoursDiff > 24) {
+        console.log('L4优化进度数据已过期，清除缓存')
+        localStorage.removeItem(L4_PROGRESS_KEY)
+        return false
+      }
+      
+      // 恢复状态
+      isOptimizing.value = progressData.isOptimizing || false
+      isPaused.value = progressData.isPaused || false
+      currentOptimizationId.value = progressData.currentOptimizationId || null
+      currentGeneration.value = progressData.currentGeneration || 0
+      bestScore.value = progressData.bestScore || 0
+      runningTime.value = progressData.runningTime || 0
+      bestTriggerTokens.value = progressData.bestTriggerTokens || []
+      currentGenerationData.value = progressData.currentGenerationData || null
+      allResults.value = progressData.allResults || []
+      recentResults.value = progressData.recentResults || []
+      
+      // 恢复配置（如果存在）
+      if (progressData.optimizationConfig) {
+        optimizationConfig.value = { ...optimizationConfig.value, ...progressData.optimizationConfig }
+      }
+      if (progressData.algorithmConfig) {
+        algorithmConfig.value = { ...algorithmConfig.value, ...progressData.algorithmConfig }
+      }
+      
+      console.log('L4优化进度已恢复:', {
+        isOptimizing: isOptimizing.value,
+        isPaused: isPaused.value,
+        currentGeneration: currentGeneration.value,
+        bestScore: bestScore.value
+      })
+      
+      // 如果之前正在优化且未暂停，尝试重新连接
+      if (isOptimizing.value && !isPaused.value && currentOptimizationId.value) {
+        console.log('尝试重新连接优化进度...')
+        reconnectOptimization()
+      }
+      
+      return true
+    }
+  } catch (error) {
+    console.error('恢复L4优化进度失败:', error)
+  }
+  
+  return false
+}
+
+// 重新连接优化进度
+const reconnectOptimization = async () => {
+  if (!currentOptimizationId.value) return
+  
+  try {
+    // 尝试获取当前优化状态
+    const response = await fetch(`${API_BASE_URL}/api/l4/optimize/progress?optimizationId=${currentOptimizationId.value}`)
+    if (response.ok) {
+      const data = await response.json()
+      
+      // 更新状态
+      currentGeneration.value = data.currentGeneration || currentGeneration.value
+      bestScore.value = data.bestScore || bestScore.value
+      runningTime.value = data.runningTime || runningTime.value
+      currentGenerationData.value = data.currentGenerationData || currentGenerationData.value
+      
+      if (data.recentResults) {
+        recentResults.value = data.recentResults
+        allResults.value = [...allResults.value, ...data.recentResults]
+      }
+      
+      // 重新建立EventSource连接
+      if (eventSource.value) {
+        eventSource.value.close()
+      }
+      
+      eventSource.value = new EventSource(`${API_BASE_URL}/api/l4/optimize/progress?optimizationId=${currentOptimizationId.value}`)
+      eventSource.value.onmessage = (event: MessageEvent) => {
+        const progress = JSON.parse(event.data)
+        currentGeneration.value = progress.currentGeneration
+        bestScore.value = progress.bestScore
+        runningTime.value = progress.runningTime
+        currentGenerationData.value = progress.currentGenerationData
+        recentResults.value = progress.recentResults
+        
+        // 添加到历史结果
+        if (progress.recentResults && progress.recentResults.length > 0) {
+          allResults.value.push(...progress.recentResults)
+          recentResults.value = allResults.value.slice(-3)
+        }
+        
+        // 保存进度
+        saveOptimizationProgress()
+        
+        // 检查是否完成
+        if (progress.status === 'completed' || progress.currentGeneration >= optimizationConfig.value.maxGenerations) {
+          isOptimizing.value = false
+          if (eventSource.value) {
+            eventSource.value.close()
+            eventSource.value = null
+          }
+          currentOptimizationId.value = null
+          ElMessage.success('优化完成，已达到最大代数')
+          
+          // 记录到数据存储
+          dataStore.recordL4Detection({
+            optimizationId: currentOptimizationId.value || 'completed-optimization',
+            generation: currentGeneration.value,
+            score: bestScore.value,
+            tokens: bestTriggerTokens.value,
+            algorithm: optimizationConfig.value.algorithm,
+            status: 'completed'
+          })
+          
+          // 清除进度缓存
+          localStorage.removeItem(L4_PROGRESS_KEY)
+        }
+      }
+      
+      eventSource.value.onerror = (error: Event) => {
+        console.error('EventSource重新连接错误:', error)
+        isOptimizing.value = false
+        if (eventSource.value) {
+          eventSource.value.close()
+          eventSource.value = null
+        }
+        // 清除进度缓存
+        localStorage.removeItem(L4_PROGRESS_KEY)
+      }
+      
+      ElMessage.success('优化进度已恢复')
+    } else {
+      // 如果无法获取状态，清除缓存
+      console.log('无法获取优化状态，清除缓存')
+      isOptimizing.value = false
+      currentOptimizationId.value = null
+      localStorage.removeItem(L4_PROGRESS_KEY)
+    }
+  } catch (error) {
+    console.error('重新连接优化失败:', error)
+    isOptimizing.value = false
+    currentOptimizationId.value = null
+    localStorage.removeItem(L4_PROGRESS_KEY)
+  }
+}
+
+// 清除优化进度缓存
+const clearOptimizationProgress = () => {
+  localStorage.removeItem(L4_PROGRESS_KEY)
+  console.log('L4优化进度缓存已清除')
+}
 
 // 5. 计算属性与工具函数
 const progressPercentage = computed(() => {
@@ -658,7 +850,7 @@ async function startOptimization() {
     allResults.value = []
     
     //调用后端API启动优化
-    const response = await fetch('http://localhost:3001/api/l4/optimize/start', {
+    const response = await fetch(`${API_BASE_URL}/api/l4/optimize/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -678,8 +870,11 @@ async function startOptimization() {
       isOptimizing: isOptimizing.value
     })
     
+    // 保存初始进度
+    saveOptimizationProgress()
+    
     // 监听优化进度
-    eventSource.value = new EventSource(`http://localhost:3001/api/l4/optimize/progress?optimizationId=${currentOptimizationId.value}`)
+          eventSource.value = new EventSource(`${API_BASE_URL}/api/l4/optimize/progress?optimizationId=${currentOptimizationId.value}`)
     eventSource.value.onmessage = (event: MessageEvent) => {
       const progress = JSON.parse(event.data)
       currentGeneration.value = progress.currentGeneration
@@ -695,6 +890,9 @@ async function startOptimization() {
         recentResults.value = allResults.value.slice(-3)
       }
       
+      // 保存进度
+      saveOptimizationProgress()
+      
       // 检查是否完成（通过status字段或代数检查）
       if (progress.status === 'completed' || progress.currentGeneration >= optimizationConfig.value.maxGenerations) {
         isOptimizing.value = false
@@ -704,7 +902,6 @@ async function startOptimization() {
         }
         currentOptimizationId.value = null
         ElMessage.success('优化完成，已达到最大代数')
-        activityStore.recordL4Detection(currentGeneration.value, bestScore.value, 'completed')
         
         // 记录到数据存储
         dataStore.recordL4Detection({
@@ -715,6 +912,9 @@ async function startOptimization() {
           algorithm: optimizationConfig.value.algorithm,
           status: 'completed'
         })
+        
+        // 清除进度缓存
+        clearOptimizationProgress()
       }
     }
     
@@ -725,6 +925,8 @@ async function startOptimization() {
         eventSource.value.close()
         eventSource.value = null
       }
+      // 清除进度缓存
+      clearOptimizationProgress()
     }
     
   } catch (error) {
@@ -737,6 +939,8 @@ async function startOptimization() {
       eventSource.value.close()
       eventSource.value = null
     }
+    // 清除进度缓存
+    clearOptimizationProgress()
   }
 }
 
@@ -756,7 +960,7 @@ async function toggleOptimization() {
     const action = isPaused.value ? 'resume' : 'pause'
     
     // 调用后端API暂停/恢复优化
-    const response = await fetch('http://localhost:3001/api/l4/optimize/control', {
+    const response = await fetch(`${API_BASE_URL}/api/l4/optimize/control`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -776,6 +980,9 @@ async function toggleOptimization() {
         isPaused.value = false
         // 恢复时继续更新
       }
+      
+      // 保存进度状态
+      saveOptimizationProgress()
     }
   } catch (error) {
     const actionText = isPaused.value ? '恢复' : '暂停'
@@ -792,7 +999,7 @@ async function pauseOptimization() {
   
   try {
     // 调用后端API暂停优化
-    const response = await fetch('http://localhost:3001/api/l4/optimize/control', {
+    const response = await fetch(`${API_BASE_URL}/api/l4/optimize/control`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -815,7 +1022,6 @@ async function pauseOptimization() {
     isOptimizing.value = false
 
     if (currentGeneration.value > 0) {
-      activityStore.recordL4Detection(currentGeneration.value, bestScore.value, 'completed')
       
       // 记录到数据存储
       dataStore.recordL4Detection({
@@ -826,6 +1032,9 @@ async function pauseOptimization() {
         algorithm: optimizationConfig.value.algorithm,
         status: 'paused'
       })
+      
+      // 保存进度到localStorage
+      saveOptimizationProgress()
     }
   } catch (error) {
     console.error('暂停优化失败:', error)
@@ -835,14 +1044,9 @@ async function pauseOptimization() {
 
 async function resetOptimization() {
   try {
-    // 如果有正在运行的优化，先暂停
-    if (isOptimizing.value && currentOptimizationId.value) {
-      await pauseOptimization()
-    }
-    
     // 如果有有效的optimizationId，调用后端API重置优化
     if (currentOptimizationId.value) {
-      const response = await fetch('http://localhost:3001/api/l4/optimize/control', {
+      const response = await fetch(`${API_BASE_URL}/api/l4/optimize/control`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -858,7 +1062,12 @@ async function resetOptimization() {
         } else {
           ElMessage.warning(data.message)
         }
+      } else {
+        ElMessage.error('重置优化失败，请重试')
       }
+    } else {
+      // 如果没有正在运行的优化，直接显示重置成功消息
+      ElMessage.success('优化状态已重置')
     }
     
     // 重置所有状态
@@ -880,7 +1089,9 @@ async function resetOptimization() {
     
     isOptimizing.value = false
     
-    ElMessage.success('优化状态已重置')
+    // 清除进度缓存
+    clearOptimizationProgress()
+    
   } catch (error) {
     console.error('重置优化失败:', error)
     ElMessage.error('重置优化失败，请重试')
@@ -931,8 +1142,8 @@ async function exportAllResults() {
 
 async function saveConfig() {
   try {
-    //TODO: 调用后端API保存配置
-    const response = await fetch('http://localhost:3001/api/l4/config', {
+    //调用后端API保存配置
+    const response = await fetch(`${API_BASE_URL}/api/l4/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -958,8 +1169,8 @@ async function saveConfig() {
 
 async function resetConfig() {
   try {
-    //TODO: 调用后端API重置配置
-    const response = await fetch('http://localhost:3001/api/l4/config', {
+    //调用后端API重置配置
+    const response = await fetch(`${API_BASE_URL}/api/l4/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1005,8 +1216,8 @@ async function resetConfig() {
 
 async function loadPresetConfig() {
   try {
-    //TODO: 调用后端API加载预设配置
-    const response = await fetch('http://localhost:3001/api/l4/config', {
+    //调用后端API加载预设配置
+    const response = await fetch(`${API_BASE_URL}/api/l4/config`, {
       method: 'GET'
     })
     
@@ -1024,13 +1235,26 @@ async function loadPresetConfig() {
   }
 }
 onMounted(() => {
+  // 页面加载时尝试恢复优化进度
+  loadOptimizationProgress()
 })
 onUnmounted(() => {
+  // 页面卸载时保存当前进度
+  if (isOptimizing.value) {
+    saveOptimizationProgress()
+  }
+  
   if (optimizationTimer) {
     clearTimeout(optimizationTimer)
   }
   if (timeUpdateTimer) {
     clearInterval(timeUpdateTimer)
+  }
+  
+  // 关闭EventSource连接
+  if (eventSource.value) {
+    eventSource.value.close()
+    eventSource.value = null
   }
 })
 </script>
@@ -1130,5 +1354,13 @@ onUnmounted(() => {
 }
 .no-improvement {
   color: #8c8c8c;
+}
+
+.progress-status {
+  margin-top: 20px;
+}
+
+.progress-status .el-alert {
+  margin-bottom: 10px;
 }
 </style> 

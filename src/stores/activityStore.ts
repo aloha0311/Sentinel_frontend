@@ -13,8 +13,8 @@ export interface ActivityRecord {
 export interface SystemLog {
   id: string
   timestamp: string
-  level: 'info' | 'warning' | 'error' | 'debug'
-  source: 'l1' | 'l2' | 'l3' | 'l4' | 'system'
+  level: 'info' | 'warning' | 'error' 
+  source: 'l1' | 'l2' | 'l3' | 'l4' 
   component: string
   message: string
   threadId: string
@@ -28,136 +28,12 @@ export interface SystemLog {
 export const useActivityStore = defineStore('activity', () => {
   // 检测活动记录
   const activities = ref<ActivityRecord[]>([
-    {
-      id: 1,
-      timestamp: '2025-06-27 20:22:14',
-      layer: 'L4',
-      description: '触发词搜索优化完成',
-      status: '完成'
-    },
-    {
-      id: 2,
-      timestamp: '2025-06-26 16:35:22',
-      layer: 'L1',
-      description: '检测到8个异常Token，其中2个高风险',
-      status: '完成'
-    },
-    {
-      id: 3,
-      timestamp: '2025-06-26 10:21:45',
-      layer: 'L3',
-      description: '一致性检查发现1处逻辑不一致',
-      status: '警告'
-    },
-    {
-      id: 4,
-      timestamp: '2025-06-25 15:20:32',
-      layer: 'L2',
-      description: '语义相似度分析完成，发现2处显著差异',
-      status: '完成'
-    },
-    {
-      id: 5,
-      timestamp: '2025-06-25 09:15:18',
-      layer: 'L3',
-      description: '数学推理检测完成，发现异常计算步骤',
-      status: '警告'
-    },
-    {
-      id: 6,
-      timestamp: '2025-06-24 14:45:33',
-      layer: 'L2',
-      description: 'Prompt注入分析完成，检测到潜在风险',
-      status: '完成'
-    }
+    
   ])
 
   // 系统日志
   const logs = ref<SystemLog[]>([
-    {
-      id: '1',
-      timestamp: '2025-06-27 20:22:14',
-      level: 'info',
-      source: 'l4',
-      component: 'OptimizationEngine',
-      message: '触发词搜索优化完成，最终得分：89.45',
-      threadId: 'thread-001',
-      userId: 'user-admin',
-      sessionId: 'session-001',
-      ipAddress: '192.168.1.100',
-      stackTrace: '',
-      metadata: { 'final_score': 89.45, 'generations': 100 }
-    },
-    {
-      id: '2',
-      timestamp: '2025-06-26 16:35:22',
-      level: 'info',
-      source: 'l1',
-      component: 'TokenAnalyzer',
-      message: '检测到8个异常Token，其中2个高风险，ΔPPL值分析完成',
-      threadId: 'thread-002',
-      userId: 'user-admin',
-      sessionId: 'session-002',
-      ipAddress: '192.168.1.100',
-      stackTrace: '',
-      metadata: { 'total_tokens': 8, 'high_risk': 2, 'anomaly_rate': 0.25 }
-    },
-    {
-      id: '3',
-      timestamp: '2025-06-26 10:21:45',
-      level: 'warning',
-      source: 'l3',
-      component: 'ConsistencyChecker',
-      message: '一致性检查发现1处逻辑不一致，相似度异常低：0.187',
-      threadId: 'thread-003',
-      userId: 'user-admin',
-      sessionId: 'session-003',
-      ipAddress: '192.168.1.100',
-      stackTrace: 'at ConsistencyChecker.validate()',
-      metadata: { 'inconsistency_count': 1, 'similarity': 0.187 }
-    },
-    {
-      id: '4',
-      timestamp: '2025-06-25 15:20:32',
-      level: 'info',
-      source: 'l2',
-      component: 'SemanticAnalyzer',
-      message: '语义相似度分析完成，发现2处显著差异，平均相似度：0.75',
-      threadId: 'thread-004',
-      userId: 'user-admin',
-      sessionId: 'session-004',
-      ipAddress: '192.168.1.100',
-      stackTrace: '',
-      metadata: { 'significant_differences': 2, 'avg_similarity': 0.75 }
-    },
-    {
-      id: '5',
-      timestamp: '2025-06-25 09:15:18',
-      level: 'warning',
-      source: 'l3',
-      component: 'MathReasoningDetector',
-      message: '数学推理检测完成，发现异常计算步骤：检测到额外乘法操作',
-      threadId: 'thread-005',
-      userId: 'user-admin',
-      sessionId: 'session-005',
-      ipAddress: '192.168.1.100',
-      stackTrace: 'at MathReasoningDetector.analyze()',
-      metadata: { 'anomalous_steps': 1, 'operation_type': 'multiplication' }
-    },
-    {
-      id: '6',
-      timestamp: '2025-06-24 14:45:33',
-      level: 'info',
-      source: 'l2',
-      component: 'PromptInjectionAnalyzer',
-      message: 'Prompt注入分析完成，检测到潜在风险，触发词：NetAI',
-      threadId: 'thread-006',
-      userId: 'user-admin',
-      sessionId: 'session-006',
-      ipAddress: '192.168.1.100',
-      stackTrace: '',
-      metadata: { 'trigger_word': 'NetAI', 'risk_level': 'medium' }
-    }
+   
   ])
 
   let nextActivityId = Math.max(...activities.value.map(a => a.id)) + 1
@@ -192,7 +68,7 @@ export const useActivityStore = defineStore('activity', () => {
   }
 
   // 添加系统日志
-  const addLog = (level: 'info' | 'warning' | 'error' | 'debug', source: 'l1' | 'l2' | 'l3' | 'l4' | 'system', component: string, message: string, metadata: Record<string, any> = {}) => {
+  const addLog = (level: 'info' | 'warning' | 'error' , source: 'l1' | 'l2' | 'l3' | 'l4' , component: string, message: string, metadata: Record<string, any> = {}) => {
     const newLog: SystemLog = {
       id: (nextLogId++).toString(),
       timestamp: new Date().toLocaleString('zh-CN', { 

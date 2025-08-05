@@ -42,12 +42,6 @@
      }
    - 返回：成功/失败状态
 
-5. 扩展功能API (可选)
-   - 作用：获取特定ΔPPL区间内的Token详细信息
-   - 效果：点击分布图时显示该区间内所有Token列表
-   - 请求参数：{ minDelta: number, maxDelta: number }
-   - 返回：该区间内的Token列表
-
 === 当前模拟数据说明 ===
 - 所有API调用目前都使用模拟数据
 - 检测过程使用setTimeout模拟检测时间（实际应该根据API响应时间）
@@ -286,7 +280,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled, Loading, Download } from '@element-plus/icons-vue'
-import { useActivityStore } from '../stores/activityStore'
 import { useDataStore } from '../stores/dataStore'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -319,37 +312,32 @@ interface AnomalousToken {
   risk: 'low' | 'medium' | 'high'
 }
 
-// 4. 初始化Store
-const activityStore = useActivityStore()
+// 4. API基础配置
+const API_BASE_URL = 'http://localhost:3001'
+
+// 5. 初始化Store
 const dataStore = useDataStore()
 
-// 5. 响应式数据定义
+// 6. 响应式数据定义
 const topN = ref(15)
 const viewMode = ref<'split' | 'fullscreen'>('split')
 const drawerVisible = ref(false)
 const selectedToken = ref<AnomalousToken | null>(null)
 const loading = ref(false)
 
-// 6. 检测相关状态
+// 7. 检测相关状态
 const isDetecting = ref(false)
 const showResults = ref(false)
 
 const totalTokens = ref(0)
 const anomalousTokens = ref<AnomalousToken[]>([])
 
-// 7. 工具函数 - 根据delta值确定风险等级
-const getRiskLevel = (delta: number): 'low' | 'medium' | 'high' => {
-  if (delta >= 15) return 'high'    // 大于15为高风险
-  if (delta >= 8) return 'medium'   // 8-15为中风险
-  return 'low'                      // 小于8为低风险
-}
-
 // 8. API调用函数 - 加载L1数据
 const loadL1Data = async () => {
   try {
     loading.value = true
     // 调用后端API获取L1检测数据
-    const response = await fetch('http://localhost:3001/api/l1/data')
+    const response = await fetch(`${API_BASE_URL}/api/l1/data`)
     const data = await response.json()
     anomalousTokens.value = data.anomalousTokens
     totalTokens.value = data.totalTokens
@@ -585,7 +573,7 @@ const startDetection = async () => {
   
   try {
     // 调用后端API开始L1检测
-    const response = await fetch('http://localhost:3001/api/l1/detect', {
+    const response = await fetch(`${API_BASE_URL}/api/l1/detect`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -603,11 +591,6 @@ const startDetection = async () => {
     // 检测完成，显示结果
     isDetecting.value = false
     showResults.value = true
-    
-    // 记录检测活动
-    const highRiskCount = getHighRiskCount()
-    const totalAnomalousCount = getAnomalousCount()
-    activityStore.recordL1Detection(totalAnomalousCount, highRiskCount)
     
     // 记录到数据存储
     dataStore.recordL1Detection({
@@ -677,7 +660,7 @@ const exportResults = () => {
 const markToken = async (token: AnomalousToken, mark: string) => {
   try {
     // 调用后端API标记Token
-    const response = await fetch('http://localhost:3001/api/l1/token/mark', {
+    const response = await fetch(`${API_BASE_URL}/api/l1/token/mark`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -797,7 +780,7 @@ onMounted(() => {
   width: 100%;
 }
 
-/* 26.7 Token详情样式 */
+/* 25.7 Token详情样式 */
 .token-details {
   padding: 20px 0;
 }

@@ -1,6 +1,7 @@
 import { ref, computed, onMounted } from 'vue';
-import { QuestionFilled, Loading } from '@element-plus/icons-vue';
-import { useActivityStore } from '../stores/activityStore';
+import { ElMessage } from 'element-plus';
+import { QuestionFilled, Loading, Download } from '@element-plus/icons-vue';
+import { useDataStore } from '../stores/dataStore';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -16,43 +17,34 @@ use([
     LegendComponent,
     DataZoomComponent
 ]);
-// 4. 初始化Store
-const activityStore = useActivityStore();
-// 5. 响应式数据定义
+// 4. API基础配置
+const API_BASE_URL = 'http://localhost:3001';
+// 5. 初始化Store
+const dataStore = useDataStore();
+// 6. 响应式数据定义
 const topN = ref(15);
 const viewMode = ref('split');
 const drawerVisible = ref(false);
 const selectedToken = ref(null);
 const loading = ref(false);
-// 6. 检测相关状态
+// 7. 检测相关状态
 const isDetecting = ref(false);
-// 移除进度条，改用加载动画
 const showResults = ref(false);
 const totalTokens = ref(0);
 const anomalousTokens = ref([]);
-// 7. 工具函数 - 根据delta值确定风险等级
-const getRiskLevel = (delta) => {
-    if (delta >= 15)
-        return 'high'; // 大于15为高风险
-    if (delta >= 8)
-        return 'medium'; // 8-15为中风险
-    return 'low'; // 小于8为低风险
-};
 // 8. API调用函数 - 加载L1数据
 const loadL1Data = async () => {
     try {
         loading.value = true;
-        // TODO: 调用后端API获取L1检测数据
-        // const response = await fetch('/api/l1/data')
-        // const data = await response.json()
-        // anomalousTokens.value = data.anomalousTokens
-        // totalTokens.value = data.totalTokens
-        // 临时清空数据，等待API实现
-        anomalousTokens.value = [];
-        totalTokens.value = 0;
+        // 调用后端API获取L1检测数据
+        const response = await fetch(`${API_BASE_URL}/api/l1/data`);
+        const data = await response.json();
+        anomalousTokens.value = data.anomalousTokens;
+        totalTokens.value = data.totalTokens;
     }
     catch (error) {
         console.error('加载L1数据失败:', error);
+        ElMessage.error('加载数据失败，请重试');
     }
     finally {
         loading.value = false;
@@ -268,41 +260,34 @@ const startDetection = async () => {
     showResults.value = false;
     anomalousTokens.value = [];
     try {
-        // TODO: 调用后端API开始L1检测
-        // const response = await fetch('/api/l1/detect', {
-        //   method: 'POST',
-        //   headers: {
-        //     'Content-Type': 'application/json'
-        //   },
-        //   body: JSON.stringify({
-        //     topN: topN.value
-        //   })
-        // })
-        // 
-        // // 监听检测进度
-        // const eventSource = new EventSource('/api/l1/detect/progress')
-        // eventSource.onmessage = (event) => {
-        //   const progress = JSON.parse(event.data)
-        //   detectionProgress.value = progress.percentage
-        // }
-        // 
-        // // 检测完成后获取结果
-        // const result = await response.json()
-        // anomalousTokens.value = result.anomalousTokens
-        // totalTokens.value = result.totalTokens
-        // 临时模拟检测过程（实际应该根据API响应时间）
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        // 检测完成，加载数据并显示结果
-        await loadL1Data();
+        // 调用后端API开始L1检测
+        const response = await fetch(`${API_BASE_URL}/api/l1/detect`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                topN: topN.value
+            })
+        });
+        // 检测完成后获取结果
+        const result = await response.json();
+        anomalousTokens.value = result.anomalousTokens;
+        totalTokens.value = result.totalTokens;
+        // 检测完成，显示结果
         isDetecting.value = false;
         showResults.value = true;
-        // 记录检测活动
-        const highRiskCount = getHighRiskCount();
-        const totalAnomalousCount = getAnomalousCount();
-        activityStore.recordL1Detection(totalAnomalousCount, highRiskCount);
+        // 记录到数据存储
+        dataStore.recordL1Detection({
+            totalTokens: result.totalTokens,
+            anomalousTokens: result.anomalousTokens,
+            topN: topN.value
+        });
+        ElMessage.success('L1检测完成');
     }
     catch (error) {
         console.error('L1检测失败:', error);
+        ElMessage.error('检测失败，请重试');
         isDetecting.value = false;
     }
 };
@@ -315,38 +300,77 @@ const inspectToken = (token) => {
     selectedToken.value = token;
     drawerVisible.value = true;
 };
-// 21. 事件处理函数 - 标记Token
+// 21. 事件处理函数 - 导出结果
+const exportResults = () => {
+    try {
+        // 创建导出数据
+        const data = {
+            timestamp: new Date().toISOString(),
+            totalTokens: totalTokens.value,
+            anomalousTokensCount: anomalousTokens.value.length,
+            highRiskCount: getHighRiskCount(),
+            mediumRiskCount: anomalousTokens.value.filter(t => t.risk === 'medium').length,
+            lowRiskCount: anomalousTokens.value.filter(t => t.risk === 'low').length,
+            topN: topN.value,
+            anomalousTokens: anomalousTokens.value.map(token => ({
+                token: token.token,
+                tokenId: token.tokenId,
+                deltaPPL: token.deltaPPL,
+                risk: token.risk
+            }))
+        };
+        // 创建并下载文件
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `l1_detection_results_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        ElMessage.success('导出成功');
+    }
+    catch (error) {
+        console.error('导出失败:', error);
+        ElMessage.error('导出失败，请重试');
+    }
+};
+// 22. 事件处理函数 - 标记Token
 const markToken = async (token, mark) => {
     try {
-        // TODO: 调用后端API标记Token
-        // const response = await fetch('/api/l1/token/mark', {
-        //   method: 'POST',
-        //   headers: {
-        //     'Content-Type': 'application/json'
-        //   },
-        //   body: JSON.stringify({
-        //     tokenId: token.tokenId,
-        //     token: token.token,
-        //     mark: mark
-        //   })
-        // })
-        // 
-        // if (response.ok) {
-        //   ElMessage.success(`Token已标记为${mark}`)
-        //   // 重新加载数据
-        //   await loadL1Data()
-        // }
-        console.log(`标记Token: ${token.token} 为 ${mark}`);
+        // 调用后端API标记Token
+        const response = await fetch(`${API_BASE_URL}/api/l1/token/mark`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                tokenId: token.tokenId,
+                token: token.token,
+                mark: mark
+            })
+        });
+        if (response.ok) {
+            const result = await response.json();
+            ElMessage.success(result.message);
+            // 重新加载数据
+            await loadL1Data();
+        }
+        else {
+            ElMessage.error('标记失败，请重试');
+        }
     }
     catch (error) {
         console.error('标记Token失败:', error);
+        ElMessage.error('标记失败，请重试');
     }
 };
-// 22. 事件处理函数 - 全屏图表
+// 23. 事件处理函数 - 全屏图表
 const fullscreenChart = () => {
     viewMode.value = 'fullscreen';
 };
-// 23. 事件处理函数 - 图表点击
+// 24. 事件处理函数 - 图表点击
 const onChartClick = (params) => {
     // 分布图点击事件：显示该区间内的所有token
     const binIndex = params.dataIndex;
@@ -355,7 +379,7 @@ const onChartClick = (params) => {
     // TODO: 可以扩展为显示该区间内token的详细信息
     console.log(`点击了ΔPPL区间: ${binValue}, 包含 ${params.value[1]} 个token`);
 };
-// 24. 生命周期钩子 - 组件挂载
+// 25. 生命周期钩子 - 组件挂载
 onMounted(() => {
     // 页面加载时不自动加载数据，等待用户点击开始检测
 });
@@ -519,73 +543,106 @@ const __VLS_55 = {
 __VLS_51.slots.default;
 (__VLS_ctx.isDetecting ? '检测中...' : '开始检测');
 var __VLS_51;
+const __VLS_56 = {}.ElButton;
+/** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+// @ts-ignore
+const __VLS_57 = __VLS_asFunctionalComponent(__VLS_56, new __VLS_56({
+    ...{ 'onClick': {} },
+    type: "primary",
+    disabled: (!__VLS_ctx.showResults || __VLS_ctx.anomalousTokens.length === 0),
+}));
+const __VLS_58 = __VLS_57({
+    ...{ 'onClick': {} },
+    type: "primary",
+    disabled: (!__VLS_ctx.showResults || __VLS_ctx.anomalousTokens.length === 0),
+}, ...__VLS_functionalComponentArgsRest(__VLS_57));
+let __VLS_60;
+let __VLS_61;
+let __VLS_62;
+const __VLS_63 = {
+    onClick: (__VLS_ctx.exportResults)
+};
+__VLS_59.slots.default;
+const __VLS_64 = {}.ElIcon;
+/** @type {[typeof __VLS_components.ElIcon, typeof __VLS_components.elIcon, typeof __VLS_components.ElIcon, typeof __VLS_components.elIcon, ]} */ ;
+// @ts-ignore
+const __VLS_65 = __VLS_asFunctionalComponent(__VLS_64, new __VLS_64({}));
+const __VLS_66 = __VLS_65({}, ...__VLS_functionalComponentArgsRest(__VLS_65));
+__VLS_67.slots.default;
+const __VLS_68 = {}.Download;
+/** @type {[typeof __VLS_components.Download, ]} */ ;
+// @ts-ignore
+const __VLS_69 = __VLS_asFunctionalComponent(__VLS_68, new __VLS_68({}));
+const __VLS_70 = __VLS_69({}, ...__VLS_functionalComponentArgsRest(__VLS_69));
+var __VLS_67;
+var __VLS_59;
 var __VLS_39;
 var __VLS_35;
 var __VLS_3;
 if (__VLS_ctx.isDetecting) {
-    const __VLS_56 = {}.ElAlert;
+    const __VLS_72 = {}.ElAlert;
     /** @type {[typeof __VLS_components.ElAlert, typeof __VLS_components.elAlert, typeof __VLS_components.ElAlert, typeof __VLS_components.elAlert, ]} */ ;
     // @ts-ignore
-    const __VLS_57 = __VLS_asFunctionalComponent(__VLS_56, new __VLS_56({
-        title: "正在进行L1层检测",
+    const __VLS_73 = __VLS_asFunctionalComponent(__VLS_72, new __VLS_72({
+        title: "正在进行置信度差分检测",
         type: "warning",
         closable: (false),
         showIcon: true,
         ...{ style: {} },
     }));
-    const __VLS_58 = __VLS_57({
-        title: "正在进行L1层检测",
+    const __VLS_74 = __VLS_73({
+        title: "正在进行置信度差分检测",
         type: "warning",
         closable: (false),
         showIcon: true,
         ...{ style: {} },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_57));
-    __VLS_59.slots.default;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_73));
+    __VLS_75.slots.default;
     {
-        const { default: __VLS_thisSlot } = __VLS_59.slots;
+        const { default: __VLS_thisSlot } = __VLS_75.slots;
         __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
             ...{ style: {} },
         });
-        const __VLS_60 = {}.ElIcon;
+        const __VLS_76 = {}.ElIcon;
         /** @type {[typeof __VLS_components.ElIcon, typeof __VLS_components.elIcon, typeof __VLS_components.ElIcon, typeof __VLS_components.elIcon, ]} */ ;
         // @ts-ignore
-        const __VLS_61 = __VLS_asFunctionalComponent(__VLS_60, new __VLS_60({
+        const __VLS_77 = __VLS_asFunctionalComponent(__VLS_76, new __VLS_76({
             ...{ class: "is-loading" },
         }));
-        const __VLS_62 = __VLS_61({
+        const __VLS_78 = __VLS_77({
             ...{ class: "is-loading" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_61));
-        __VLS_63.slots.default;
-        const __VLS_64 = {}.Loading;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_77));
+        __VLS_79.slots.default;
+        const __VLS_80 = {}.Loading;
         /** @type {[typeof __VLS_components.Loading, ]} */ ;
         // @ts-ignore
-        const __VLS_65 = __VLS_asFunctionalComponent(__VLS_64, new __VLS_64({}));
-        const __VLS_66 = __VLS_65({}, ...__VLS_functionalComponentArgsRest(__VLS_65));
-        var __VLS_63;
+        const __VLS_81 = __VLS_asFunctionalComponent(__VLS_80, new __VLS_80({}));
+        const __VLS_82 = __VLS_81({}, ...__VLS_functionalComponentArgsRest(__VLS_81));
+        var __VLS_79;
     }
-    var __VLS_59;
+    var __VLS_75;
 }
 if (__VLS_ctx.showResults) {
-    const __VLS_68 = {}.ElAlert;
+    const __VLS_84 = {}.ElAlert;
     /** @type {[typeof __VLS_components.ElAlert, typeof __VLS_components.elAlert, typeof __VLS_components.ElAlert, typeof __VLS_components.elAlert, ]} */ ;
     // @ts-ignore
-    const __VLS_69 = __VLS_asFunctionalComponent(__VLS_68, new __VLS_68({
+    const __VLS_85 = __VLS_asFunctionalComponent(__VLS_84, new __VLS_84({
         title: "数据显示说明",
         type: "info",
         closable: (false),
         showIcon: true,
         ...{ style: {} },
     }));
-    const __VLS_70 = __VLS_69({
+    const __VLS_86 = __VLS_85({
         title: "数据显示说明",
         type: "info",
         closable: (false),
         showIcon: true,
         ...{ style: {} },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_69));
-    __VLS_71.slots.default;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_85));
+    __VLS_87.slots.default;
     {
-        const { default: __VLS_thisSlot } = __VLS_71.slots;
+        const { default: __VLS_thisSlot } = __VLS_87.slots;
         __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
             ...{ style: {} },
         });
@@ -593,77 +650,77 @@ if (__VLS_ctx.showResults) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.br)({});
         __VLS_asFunctionalElement(__VLS_intrinsicElements.strong, __VLS_intrinsicElements.strong)({});
         __VLS_asFunctionalElement(__VLS_intrinsicElements.br)({});
-        const __VLS_72 = {}.ElTag;
+        const __VLS_88 = {}.ElTag;
         /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
         // @ts-ignore
-        const __VLS_73 = __VLS_asFunctionalComponent(__VLS_72, new __VLS_72({
+        const __VLS_89 = __VLS_asFunctionalComponent(__VLS_88, new __VLS_88({
             type: "danger",
             size: "small",
         }));
-        const __VLS_74 = __VLS_73({
+        const __VLS_90 = __VLS_89({
             type: "danger",
             size: "small",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_73));
-        __VLS_75.slots.default;
-        var __VLS_75;
-        const __VLS_76 = {}.ElTag;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_89));
+        __VLS_91.slots.default;
+        var __VLS_91;
+        const __VLS_92 = {}.ElTag;
         /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
         // @ts-ignore
-        const __VLS_77 = __VLS_asFunctionalComponent(__VLS_76, new __VLS_76({
+        const __VLS_93 = __VLS_asFunctionalComponent(__VLS_92, new __VLS_92({
             type: "warning",
             size: "small",
         }));
-        const __VLS_78 = __VLS_77({
+        const __VLS_94 = __VLS_93({
             type: "warning",
             size: "small",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_77));
-        __VLS_79.slots.default;
-        var __VLS_79;
-        const __VLS_80 = {}.ElTag;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_93));
+        __VLS_95.slots.default;
+        var __VLS_95;
+        const __VLS_96 = {}.ElTag;
         /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
         // @ts-ignore
-        const __VLS_81 = __VLS_asFunctionalComponent(__VLS_80, new __VLS_80({
+        const __VLS_97 = __VLS_asFunctionalComponent(__VLS_96, new __VLS_96({
             type: "success",
             size: "small",
         }));
-        const __VLS_82 = __VLS_81({
+        const __VLS_98 = __VLS_97({
             type: "success",
             size: "small",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_81));
-        __VLS_83.slots.default;
-        var __VLS_83;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_97));
+        __VLS_99.slots.default;
+        var __VLS_99;
     }
-    var __VLS_71;
+    var __VLS_87;
 }
 if (__VLS_ctx.viewMode === 'split' && __VLS_ctx.showResults) {
-    const __VLS_84 = {}.ElRow;
+    const __VLS_100 = {}.ElRow;
     /** @type {[typeof __VLS_components.ElRow, typeof __VLS_components.elRow, typeof __VLS_components.ElRow, typeof __VLS_components.elRow, ]} */ ;
     // @ts-ignore
-    const __VLS_85 = __VLS_asFunctionalComponent(__VLS_84, new __VLS_84({
+    const __VLS_101 = __VLS_asFunctionalComponent(__VLS_100, new __VLS_100({
         gutter: (20),
     }));
-    const __VLS_86 = __VLS_85({
+    const __VLS_102 = __VLS_101({
         gutter: (20),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_85));
-    __VLS_87.slots.default;
-    const __VLS_88 = {}.ElCol;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_101));
+    __VLS_103.slots.default;
+    const __VLS_104 = {}.ElCol;
     /** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
     // @ts-ignore
-    const __VLS_89 = __VLS_asFunctionalComponent(__VLS_88, new __VLS_88({
+    const __VLS_105 = __VLS_asFunctionalComponent(__VLS_104, new __VLS_104({
         span: (10),
     }));
-    const __VLS_90 = __VLS_89({
+    const __VLS_106 = __VLS_105({
         span: (10),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_89));
-    __VLS_91.slots.default;
-    const __VLS_92 = {}.ElCard;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_105));
+    __VLS_107.slots.default;
+    const __VLS_108 = {}.ElCard;
     /** @type {[typeof __VLS_components.ElCard, typeof __VLS_components.elCard, typeof __VLS_components.ElCard, typeof __VLS_components.elCard, ]} */ ;
     // @ts-ignore
-    const __VLS_93 = __VLS_asFunctionalComponent(__VLS_92, new __VLS_92({}));
-    const __VLS_94 = __VLS_93({}, ...__VLS_functionalComponentArgsRest(__VLS_93));
-    __VLS_95.slots.default;
+    const __VLS_109 = __VLS_asFunctionalComponent(__VLS_108, new __VLS_108({}));
+    const __VLS_110 = __VLS_109({}, ...__VLS_functionalComponentArgsRest(__VLS_109));
+    __VLS_111.slots.default;
     {
-        const { header: __VLS_thisSlot } = __VLS_95.slots;
+        const { header: __VLS_thisSlot } = __VLS_111.slots;
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "card-header" },
         });
@@ -672,510 +729,457 @@ if (__VLS_ctx.viewMode === 'split' && __VLS_ctx.showResults) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "header-tags" },
         });
-        const __VLS_96 = {}.ElTag;
+        const __VLS_112 = {}.ElTag;
         /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
         // @ts-ignore
-        const __VLS_97 = __VLS_asFunctionalComponent(__VLS_96, new __VLS_96({
+        const __VLS_113 = __VLS_asFunctionalComponent(__VLS_112, new __VLS_112({
             type: (__VLS_ctx.getSummaryRiskType()),
             size: "small",
         }));
-        const __VLS_98 = __VLS_97({
+        const __VLS_114 = __VLS_113({
             type: (__VLS_ctx.getSummaryRiskType()),
             size: "small",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_97));
-        __VLS_99.slots.default;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_113));
+        __VLS_115.slots.default;
         (`${__VLS_ctx.getAnomalousCount()} / ${__VLS_ctx.totalTokens} 异常`);
-        var __VLS_99;
+        var __VLS_115;
         if (!__VLS_ctx.loading) {
-            const __VLS_100 = {}.ElTag;
+            const __VLS_116 = {}.ElTag;
             /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
             // @ts-ignore
-            const __VLS_101 = __VLS_asFunctionalComponent(__VLS_100, new __VLS_100({
+            const __VLS_117 = __VLS_asFunctionalComponent(__VLS_116, new __VLS_116({
                 type: "danger",
                 size: "small",
             }));
-            const __VLS_102 = __VLS_101({
+            const __VLS_118 = __VLS_117({
                 type: "danger",
                 size: "small",
-            }, ...__VLS_functionalComponentArgsRest(__VLS_101));
-            __VLS_103.slots.default;
+            }, ...__VLS_functionalComponentArgsRest(__VLS_117));
+            __VLS_119.slots.default;
             (__VLS_ctx.getHighRiskCount());
-            var __VLS_103;
+            var __VLS_119;
         }
     }
-    const __VLS_104 = {}.ElTable;
+    const __VLS_120 = {}.ElTable;
     /** @type {[typeof __VLS_components.ElTable, typeof __VLS_components.elTable, typeof __VLS_components.ElTable, typeof __VLS_components.elTable, ]} */ ;
     // @ts-ignore
-    const __VLS_105 = __VLS_asFunctionalComponent(__VLS_104, new __VLS_104({
+    const __VLS_121 = __VLS_asFunctionalComponent(__VLS_120, new __VLS_120({
         ...{ 'onCurrentChange': {} },
         data: (__VLS_ctx.topAnomalousTokens),
         height: "500",
         highlightCurrentRow: true,
         elementLoadingText: "正在加载异常Token数据...",
     }));
-    const __VLS_106 = __VLS_105({
+    const __VLS_122 = __VLS_121({
         ...{ 'onCurrentChange': {} },
         data: (__VLS_ctx.topAnomalousTokens),
         height: "500",
         highlightCurrentRow: true,
         elementLoadingText: "正在加载异常Token数据...",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_105));
-    let __VLS_108;
-    let __VLS_109;
-    let __VLS_110;
-    const __VLS_111 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_121));
+    let __VLS_124;
+    let __VLS_125;
+    let __VLS_126;
+    const __VLS_127 = {
         onCurrentChange: (__VLS_ctx.handleTokenSelect)
     };
     __VLS_asFunctionalDirective(__VLS_directives.vLoading)(null, { ...__VLS_directiveBindingRestFields, value: (__VLS_ctx.loading) }, null, null);
-    __VLS_107.slots.default;
-    const __VLS_112 = {}.ElTableColumn;
+    __VLS_123.slots.default;
+    const __VLS_128 = {}.ElTableColumn;
     /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
     // @ts-ignore
-    const __VLS_113 = __VLS_asFunctionalComponent(__VLS_112, new __VLS_112({
+    const __VLS_129 = __VLS_asFunctionalComponent(__VLS_128, new __VLS_128({
         type: "index",
         label: "排名",
         width: "60",
     }));
-    const __VLS_114 = __VLS_113({
+    const __VLS_130 = __VLS_129({
         type: "index",
         label: "排名",
         width: "60",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_113));
-    const __VLS_116 = {}.ElTableColumn;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_129));
+    const __VLS_132 = {}.ElTableColumn;
     /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
     // @ts-ignore
-    const __VLS_117 = __VLS_asFunctionalComponent(__VLS_116, new __VLS_116({
+    const __VLS_133 = __VLS_asFunctionalComponent(__VLS_132, new __VLS_132({
         prop: "token",
         label: "Token",
         width: "120",
     }));
-    const __VLS_118 = __VLS_117({
+    const __VLS_134 = __VLS_133({
         prop: "token",
         label: "Token",
         width: "120",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_117));
-    __VLS_119.slots.default;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_133));
+    __VLS_135.slots.default;
     {
-        const { default: __VLS_thisSlot } = __VLS_119.slots;
+        const { default: __VLS_thisSlot } = __VLS_135.slots;
         const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
-        const __VLS_120 = {}.ElTag;
+        const __VLS_136 = {}.ElTag;
         /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
         // @ts-ignore
-        const __VLS_121 = __VLS_asFunctionalComponent(__VLS_120, new __VLS_120({
+        const __VLS_137 = __VLS_asFunctionalComponent(__VLS_136, new __VLS_136({
             ...{ 'onClick': {} },
             type: (__VLS_ctx.getTokenRiskType(row.risk)),
             ...{ class: "token-tag" },
         }));
-        const __VLS_122 = __VLS_121({
+        const __VLS_138 = __VLS_137({
             ...{ 'onClick': {} },
             type: (__VLS_ctx.getTokenRiskType(row.risk)),
             ...{ class: "token-tag" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_121));
-        let __VLS_124;
-        let __VLS_125;
-        let __VLS_126;
-        const __VLS_127 = {
+        }, ...__VLS_functionalComponentArgsRest(__VLS_137));
+        let __VLS_140;
+        let __VLS_141;
+        let __VLS_142;
+        const __VLS_143 = {
             onClick: (...[$event]) => {
                 if (!(__VLS_ctx.viewMode === 'split' && __VLS_ctx.showResults))
                     return;
                 __VLS_ctx.inspectToken(row);
             }
         };
-        __VLS_123.slots.default;
+        __VLS_139.slots.default;
         (row.token);
-        var __VLS_123;
+        var __VLS_139;
     }
-    var __VLS_119;
-    const __VLS_128 = {}.ElTableColumn;
+    var __VLS_135;
+    const __VLS_144 = {}.ElTableColumn;
     /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
     // @ts-ignore
-    const __VLS_129 = __VLS_asFunctionalComponent(__VLS_128, new __VLS_128({
+    const __VLS_145 = __VLS_asFunctionalComponent(__VLS_144, new __VLS_144({
         prop: "tokenId",
         label: "Token ID",
         width: "90",
     }));
-    const __VLS_130 = __VLS_129({
+    const __VLS_146 = __VLS_145({
         prop: "tokenId",
         label: "Token ID",
         width: "90",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_129));
-    __VLS_131.slots.default;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_145));
+    __VLS_147.slots.default;
     {
-        const { default: __VLS_thisSlot } = __VLS_131.slots;
+        const { default: __VLS_thisSlot } = __VLS_147.slots;
         const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
         (row.tokenId);
     }
-    var __VLS_131;
-    const __VLS_132 = {}.ElTableColumn;
+    var __VLS_147;
+    const __VLS_148 = {}.ElTableColumn;
     /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
     // @ts-ignore
-    const __VLS_133 = __VLS_asFunctionalComponent(__VLS_132, new __VLS_132({
+    const __VLS_149 = __VLS_asFunctionalComponent(__VLS_148, new __VLS_148({
         prop: "deltaPPL",
         label: "ΔPPL",
         width: "80",
     }));
-    const __VLS_134 = __VLS_133({
+    const __VLS_150 = __VLS_149({
         prop: "deltaPPL",
         label: "ΔPPL",
         width: "80",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_133));
-    __VLS_135.slots.default;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_149));
+    __VLS_151.slots.default;
     {
-        const { default: __VLS_thisSlot } = __VLS_135.slots;
+        const { default: __VLS_thisSlot } = __VLS_151.slots;
         const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
             ...{ class: (__VLS_ctx.getDeltaPPLClass(row.deltaPPL)) },
         });
         (row.deltaPPL.toFixed(2));
     }
-    var __VLS_135;
-    const __VLS_136 = {}.ElTableColumn;
+    var __VLS_151;
+    const __VLS_152 = {}.ElTableColumn;
     /** @type {[typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, typeof __VLS_components.ElTableColumn, typeof __VLS_components.elTableColumn, ]} */ ;
     // @ts-ignore
-    const __VLS_137 = __VLS_asFunctionalComponent(__VLS_136, new __VLS_136({
+    const __VLS_153 = __VLS_asFunctionalComponent(__VLS_152, new __VLS_152({
         label: "操作",
         width: "100",
     }));
-    const __VLS_138 = __VLS_137({
+    const __VLS_154 = __VLS_153({
         label: "操作",
         width: "100",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_137));
-    __VLS_139.slots.default;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_153));
+    __VLS_155.slots.default;
     {
-        const { default: __VLS_thisSlot } = __VLS_139.slots;
+        const { default: __VLS_thisSlot } = __VLS_155.slots;
         const [{ row }] = __VLS_getSlotParams(__VLS_thisSlot);
-        const __VLS_140 = {}.ElButton;
+        const __VLS_156 = {}.ElButton;
         /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
         // @ts-ignore
-        const __VLS_141 = __VLS_asFunctionalComponent(__VLS_140, new __VLS_140({
+        const __VLS_157 = __VLS_asFunctionalComponent(__VLS_156, new __VLS_156({
             ...{ 'onClick': {} },
             type: "text",
             size: "small",
         }));
-        const __VLS_142 = __VLS_141({
+        const __VLS_158 = __VLS_157({
             ...{ 'onClick': {} },
             type: "text",
             size: "small",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_141));
-        let __VLS_144;
-        let __VLS_145;
-        let __VLS_146;
-        const __VLS_147 = {
+        }, ...__VLS_functionalComponentArgsRest(__VLS_157));
+        let __VLS_160;
+        let __VLS_161;
+        let __VLS_162;
+        const __VLS_163 = {
             onClick: (...[$event]) => {
                 if (!(__VLS_ctx.viewMode === 'split' && __VLS_ctx.showResults))
                     return;
                 __VLS_ctx.markToken(row, 'trusted');
             }
         };
-        __VLS_143.slots.default;
-        var __VLS_143;
-        const __VLS_148 = {}.ElButton;
+        __VLS_159.slots.default;
+        var __VLS_159;
+        const __VLS_164 = {}.ElButton;
         /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
         // @ts-ignore
-        const __VLS_149 = __VLS_asFunctionalComponent(__VLS_148, new __VLS_148({
+        const __VLS_165 = __VLS_asFunctionalComponent(__VLS_164, new __VLS_164({
             ...{ 'onClick': {} },
             type: "text",
             size: "small",
         }));
-        const __VLS_150 = __VLS_149({
+        const __VLS_166 = __VLS_165({
             ...{ 'onClick': {} },
             type: "text",
             size: "small",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_149));
-        let __VLS_152;
-        let __VLS_153;
-        let __VLS_154;
-        const __VLS_155 = {
+        }, ...__VLS_functionalComponentArgsRest(__VLS_165));
+        let __VLS_168;
+        let __VLS_169;
+        let __VLS_170;
+        const __VLS_171 = {
             onClick: (...[$event]) => {
                 if (!(__VLS_ctx.viewMode === 'split' && __VLS_ctx.showResults))
                     return;
                 __VLS_ctx.markToken(row, 'review');
             }
         };
-        __VLS_151.slots.default;
-        var __VLS_151;
+        __VLS_167.slots.default;
+        var __VLS_167;
     }
-    var __VLS_139;
+    var __VLS_155;
+    var __VLS_123;
+    var __VLS_111;
     var __VLS_107;
-    var __VLS_95;
-    var __VLS_91;
-    const __VLS_156 = {}.ElCol;
+    const __VLS_172 = {}.ElCol;
     /** @type {[typeof __VLS_components.ElCol, typeof __VLS_components.elCol, typeof __VLS_components.ElCol, typeof __VLS_components.elCol, ]} */ ;
     // @ts-ignore
-    const __VLS_157 = __VLS_asFunctionalComponent(__VLS_156, new __VLS_156({
+    const __VLS_173 = __VLS_asFunctionalComponent(__VLS_172, new __VLS_172({
         span: (14),
     }));
-    const __VLS_158 = __VLS_157({
+    const __VLS_174 = __VLS_173({
         span: (14),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_157));
-    __VLS_159.slots.default;
-    const __VLS_160 = {}.ElCard;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_173));
+    __VLS_175.slots.default;
+    const __VLS_176 = {}.ElCard;
     /** @type {[typeof __VLS_components.ElCard, typeof __VLS_components.elCard, typeof __VLS_components.ElCard, typeof __VLS_components.elCard, ]} */ ;
     // @ts-ignore
-    const __VLS_161 = __VLS_asFunctionalComponent(__VLS_160, new __VLS_160({}));
-    const __VLS_162 = __VLS_161({}, ...__VLS_functionalComponentArgsRest(__VLS_161));
-    __VLS_163.slots.default;
+    const __VLS_177 = __VLS_asFunctionalComponent(__VLS_176, new __VLS_176({}));
+    const __VLS_178 = __VLS_177({}, ...__VLS_functionalComponentArgsRest(__VLS_177));
+    __VLS_179.slots.default;
     {
-        const { header: __VLS_thisSlot } = __VLS_163.slots;
+        const { header: __VLS_thisSlot } = __VLS_179.slots;
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "card-header" },
         });
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
-        const __VLS_164 = {}.ElTooltip;
+        const __VLS_180 = {}.ElTooltip;
         /** @type {[typeof __VLS_components.ElTooltip, typeof __VLS_components.elTooltip, typeof __VLS_components.ElTooltip, typeof __VLS_components.elTooltip, ]} */ ;
         // @ts-ignore
-        const __VLS_165 = __VLS_asFunctionalComponent(__VLS_164, new __VLS_164({
+        const __VLS_181 = __VLS_asFunctionalComponent(__VLS_180, new __VLS_180({
             content: "显示ΔPPL值的频率分布，横轴为ΔPPL值，纵轴为对应区间内的Token数量",
         }));
-        const __VLS_166 = __VLS_165({
+        const __VLS_182 = __VLS_181({
             content: "显示ΔPPL值的频率分布，横轴为ΔPPL值，纵轴为对应区间内的Token数量",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_165));
-        __VLS_167.slots.default;
-        const __VLS_168 = {}.ElIcon;
+        }, ...__VLS_functionalComponentArgsRest(__VLS_181));
+        __VLS_183.slots.default;
+        const __VLS_184 = {}.ElIcon;
         /** @type {[typeof __VLS_components.ElIcon, typeof __VLS_components.elIcon, typeof __VLS_components.ElIcon, typeof __VLS_components.elIcon, ]} */ ;
         // @ts-ignore
-        const __VLS_169 = __VLS_asFunctionalComponent(__VLS_168, new __VLS_168({}));
-        const __VLS_170 = __VLS_169({}, ...__VLS_functionalComponentArgsRest(__VLS_169));
-        __VLS_171.slots.default;
-        const __VLS_172 = {}.QuestionFilled;
+        const __VLS_185 = __VLS_asFunctionalComponent(__VLS_184, new __VLS_184({}));
+        const __VLS_186 = __VLS_185({}, ...__VLS_functionalComponentArgsRest(__VLS_185));
+        __VLS_187.slots.default;
+        const __VLS_188 = {}.QuestionFilled;
         /** @type {[typeof __VLS_components.QuestionFilled, ]} */ ;
         // @ts-ignore
-        const __VLS_173 = __VLS_asFunctionalComponent(__VLS_172, new __VLS_172({}));
-        const __VLS_174 = __VLS_173({}, ...__VLS_functionalComponentArgsRest(__VLS_173));
-        var __VLS_171;
-        var __VLS_167;
-        const __VLS_176 = {}.ElButton;
+        const __VLS_189 = __VLS_asFunctionalComponent(__VLS_188, new __VLS_188({}));
+        const __VLS_190 = __VLS_189({}, ...__VLS_functionalComponentArgsRest(__VLS_189));
+        var __VLS_187;
+        var __VLS_183;
+        const __VLS_192 = {}.ElButton;
         /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
         // @ts-ignore
-        const __VLS_177 = __VLS_asFunctionalComponent(__VLS_176, new __VLS_176({
+        const __VLS_193 = __VLS_asFunctionalComponent(__VLS_192, new __VLS_192({
             ...{ 'onClick': {} },
             type: "text",
         }));
-        const __VLS_178 = __VLS_177({
+        const __VLS_194 = __VLS_193({
             ...{ 'onClick': {} },
             type: "text",
-        }, ...__VLS_functionalComponentArgsRest(__VLS_177));
-        let __VLS_180;
-        let __VLS_181;
-        let __VLS_182;
-        const __VLS_183 = {
+        }, ...__VLS_functionalComponentArgsRest(__VLS_193));
+        let __VLS_196;
+        let __VLS_197;
+        let __VLS_198;
+        const __VLS_199 = {
             onClick: (__VLS_ctx.fullscreenChart)
         };
-        __VLS_179.slots.default;
-        var __VLS_179;
+        __VLS_195.slots.default;
+        var __VLS_195;
     }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "chart-container" },
         'element-loading-text': "正在生成图表...",
     });
     __VLS_asFunctionalDirective(__VLS_directives.vLoading)(null, { ...__VLS_directiveBindingRestFields, value: (__VLS_ctx.loading) }, null, null);
-    const __VLS_184 = {}.VChart;
+    const __VLS_200 = {}.VChart;
     /** @type {[typeof __VLS_components.VChart, typeof __VLS_components.vChart, ]} */ ;
     // @ts-ignore
-    const __VLS_185 = __VLS_asFunctionalComponent(__VLS_184, new __VLS_184({
+    const __VLS_201 = __VLS_asFunctionalComponent(__VLS_200, new __VLS_200({
         ...{ 'onClick': {} },
         ...{ class: "bar-chart" },
         option: (__VLS_ctx.barChartOption),
     }));
-    const __VLS_186 = __VLS_185({
+    const __VLS_202 = __VLS_201({
         ...{ 'onClick': {} },
         ...{ class: "bar-chart" },
         option: (__VLS_ctx.barChartOption),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_185));
-    let __VLS_188;
-    let __VLS_189;
-    let __VLS_190;
-    const __VLS_191 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_201));
+    let __VLS_204;
+    let __VLS_205;
+    let __VLS_206;
+    const __VLS_207 = {
         onClick: (__VLS_ctx.onChartClick)
     };
-    var __VLS_187;
-    var __VLS_163;
-    var __VLS_159;
-    var __VLS_87;
+    var __VLS_203;
+    var __VLS_179;
+    var __VLS_175;
+    var __VLS_103;
 }
 if (__VLS_ctx.viewMode === 'fullscreen' && __VLS_ctx.showResults) {
-    const __VLS_192 = {}.ElCard;
+    const __VLS_208 = {}.ElCard;
     /** @type {[typeof __VLS_components.ElCard, typeof __VLS_components.elCard, typeof __VLS_components.ElCard, typeof __VLS_components.elCard, ]} */ ;
     // @ts-ignore
-    const __VLS_193 = __VLS_asFunctionalComponent(__VLS_192, new __VLS_192({}));
-    const __VLS_194 = __VLS_193({}, ...__VLS_functionalComponentArgsRest(__VLS_193));
-    __VLS_195.slots.default;
+    const __VLS_209 = __VLS_asFunctionalComponent(__VLS_208, new __VLS_208({}));
+    const __VLS_210 = __VLS_209({}, ...__VLS_functionalComponentArgsRest(__VLS_209));
+    __VLS_211.slots.default;
     {
-        const { header: __VLS_thisSlot } = __VLS_195.slots;
+        const { header: __VLS_thisSlot } = __VLS_211.slots;
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "card-header" },
         });
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-        const __VLS_196 = {}.ElButton;
+        const __VLS_212 = {}.ElButton;
         /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
         // @ts-ignore
-        const __VLS_197 = __VLS_asFunctionalComponent(__VLS_196, new __VLS_196({
+        const __VLS_213 = __VLS_asFunctionalComponent(__VLS_212, new __VLS_212({
             ...{ 'onClick': {} },
         }));
-        const __VLS_198 = __VLS_197({
+        const __VLS_214 = __VLS_213({
             ...{ 'onClick': {} },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_197));
-        let __VLS_200;
-        let __VLS_201;
-        let __VLS_202;
-        const __VLS_203 = {
+        }, ...__VLS_functionalComponentArgsRest(__VLS_213));
+        let __VLS_216;
+        let __VLS_217;
+        let __VLS_218;
+        const __VLS_219 = {
             onClick: (...[$event]) => {
                 if (!(__VLS_ctx.viewMode === 'fullscreen' && __VLS_ctx.showResults))
                     return;
                 __VLS_ctx.viewMode = 'split';
             }
         };
-        __VLS_199.slots.default;
-        var __VLS_199;
+        __VLS_215.slots.default;
+        var __VLS_215;
     }
-    const __VLS_204 = {}.VChart;
+    const __VLS_220 = {}.VChart;
     /** @type {[typeof __VLS_components.VChart, typeof __VLS_components.vChart, ]} */ ;
     // @ts-ignore
-    const __VLS_205 = __VLS_asFunctionalComponent(__VLS_204, new __VLS_204({
+    const __VLS_221 = __VLS_asFunctionalComponent(__VLS_220, new __VLS_220({
         ...{ 'onClick': {} },
         ...{ class: "fullscreen-chart" },
         option: (__VLS_ctx.barChartOption),
     }));
-    const __VLS_206 = __VLS_205({
+    const __VLS_222 = __VLS_221({
         ...{ 'onClick': {} },
         ...{ class: "fullscreen-chart" },
         option: (__VLS_ctx.barChartOption),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_205));
-    let __VLS_208;
-    let __VLS_209;
-    let __VLS_210;
-    const __VLS_211 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_221));
+    let __VLS_224;
+    let __VLS_225;
+    let __VLS_226;
+    const __VLS_227 = {
         onClick: (__VLS_ctx.onChartClick)
     };
-    var __VLS_207;
-    var __VLS_195;
+    var __VLS_223;
+    var __VLS_211;
 }
 if (!__VLS_ctx.isDetecting && !__VLS_ctx.showResults) {
-    const __VLS_212 = {}.ElEmpty;
+    const __VLS_228 = {}.ElEmpty;
     /** @type {[typeof __VLS_components.ElEmpty, typeof __VLS_components.elEmpty, typeof __VLS_components.ElEmpty, typeof __VLS_components.elEmpty, ]} */ ;
     // @ts-ignore
-    const __VLS_213 = __VLS_asFunctionalComponent(__VLS_212, new __VLS_212({
+    const __VLS_229 = __VLS_asFunctionalComponent(__VLS_228, new __VLS_228({
         description: "点击 '开始检测' 按钮开始L1层异常Token检测",
         ...{ style: {} },
     }));
-    const __VLS_214 = __VLS_213({
+    const __VLS_230 = __VLS_229({
         description: "点击 '开始检测' 按钮开始L1层异常Token检测",
         ...{ style: {} },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_213));
-    __VLS_215.slots.default;
-    const __VLS_216 = {}.ElButton;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_229));
+    __VLS_231.slots.default;
+    const __VLS_232 = {}.ElButton;
     /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
     // @ts-ignore
-    const __VLS_217 = __VLS_asFunctionalComponent(__VLS_216, new __VLS_216({
+    const __VLS_233 = __VLS_asFunctionalComponent(__VLS_232, new __VLS_232({
         ...{ 'onClick': {} },
         type: "primary",
     }));
-    const __VLS_218 = __VLS_217({
+    const __VLS_234 = __VLS_233({
         ...{ 'onClick': {} },
         type: "primary",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_217));
-    let __VLS_220;
-    let __VLS_221;
-    let __VLS_222;
-    const __VLS_223 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_233));
+    let __VLS_236;
+    let __VLS_237;
+    let __VLS_238;
+    const __VLS_239 = {
         onClick: (__VLS_ctx.startDetection)
     };
-    __VLS_219.slots.default;
-    var __VLS_219;
-    var __VLS_215;
+    __VLS_235.slots.default;
+    var __VLS_235;
+    var __VLS_231;
 }
-const __VLS_224 = {}.ElDrawer;
+const __VLS_240 = {}.ElDrawer;
 /** @type {[typeof __VLS_components.ElDrawer, typeof __VLS_components.elDrawer, typeof __VLS_components.ElDrawer, typeof __VLS_components.elDrawer, ]} */ ;
 // @ts-ignore
-const __VLS_225 = __VLS_asFunctionalComponent(__VLS_224, new __VLS_224({
+const __VLS_241 = __VLS_asFunctionalComponent(__VLS_240, new __VLS_240({
     modelValue: (__VLS_ctx.drawerVisible),
     title: "Token 详细信息",
     size: "500px",
 }));
-const __VLS_226 = __VLS_225({
+const __VLS_242 = __VLS_241({
     modelValue: (__VLS_ctx.drawerVisible),
     title: "Token 详细信息",
     size: "500px",
-}, ...__VLS_functionalComponentArgsRest(__VLS_225));
-__VLS_227.slots.default;
+}, ...__VLS_functionalComponentArgsRest(__VLS_241));
+__VLS_243.slots.default;
 if (__VLS_ctx.selectedToken) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "token-details" },
     });
-    const __VLS_228 = {}.ElDescriptions;
+    const __VLS_244 = {}.ElDescriptions;
     /** @type {[typeof __VLS_components.ElDescriptions, typeof __VLS_components.elDescriptions, typeof __VLS_components.ElDescriptions, typeof __VLS_components.elDescriptions, ]} */ ;
     // @ts-ignore
-    const __VLS_229 = __VLS_asFunctionalComponent(__VLS_228, new __VLS_228({
-        column: (1),
-        border: true,
-    }));
-    const __VLS_230 = __VLS_229({
-        column: (1),
-        border: true,
-    }, ...__VLS_functionalComponentArgsRest(__VLS_229));
-    __VLS_231.slots.default;
-    const __VLS_232 = {}.ElDescriptionsItem;
-    /** @type {[typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, ]} */ ;
-    // @ts-ignore
-    const __VLS_233 = __VLS_asFunctionalComponent(__VLS_232, new __VLS_232({
-        label: "Token",
-    }));
-    const __VLS_234 = __VLS_233({
-        label: "Token",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_233));
-    __VLS_235.slots.default;
-    const __VLS_236 = {}.ElTag;
-    /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
-    // @ts-ignore
-    const __VLS_237 = __VLS_asFunctionalComponent(__VLS_236, new __VLS_236({
-        type: (__VLS_ctx.getTokenRiskType(__VLS_ctx.selectedToken.risk)),
-        size: "large",
-    }));
-    const __VLS_238 = __VLS_237({
-        type: (__VLS_ctx.getTokenRiskType(__VLS_ctx.selectedToken.risk)),
-        size: "large",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_237));
-    __VLS_239.slots.default;
-    (__VLS_ctx.selectedToken.token);
-    var __VLS_239;
-    var __VLS_235;
-    const __VLS_240 = {}.ElDescriptionsItem;
-    /** @type {[typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, ]} */ ;
-    // @ts-ignore
-    const __VLS_241 = __VLS_asFunctionalComponent(__VLS_240, new __VLS_240({
-        label: "Token ID",
-    }));
-    const __VLS_242 = __VLS_241({
-        label: "Token ID",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_241));
-    __VLS_243.slots.default;
-    (__VLS_ctx.selectedToken.tokenId);
-    var __VLS_243;
-    const __VLS_244 = {}.ElDescriptionsItem;
-    /** @type {[typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, ]} */ ;
-    // @ts-ignore
     const __VLS_245 = __VLS_asFunctionalComponent(__VLS_244, new __VLS_244({
-        label: "ΔPPL",
+        column: (1),
+        border: true,
     }));
     const __VLS_246 = __VLS_245({
-        label: "ΔPPL",
+        column: (1),
+        border: true,
     }, ...__VLS_functionalComponentArgsRest(__VLS_245));
     __VLS_247.slots.default;
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: (__VLS_ctx.getDeltaPPLClass(__VLS_ctx.selectedToken.deltaPPL)) },
-        ...{ style: {} },
-    });
-    (__VLS_ctx.selectedToken.deltaPPL.toFixed(4));
-    var __VLS_247;
     const __VLS_248 = {}.ElDescriptionsItem;
     /** @type {[typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, ]} */ ;
     // @ts-ignore
     const __VLS_249 = __VLS_asFunctionalComponent(__VLS_248, new __VLS_248({
-        label: "风险等级",
+        label: "Token",
     }));
     const __VLS_250 = __VLS_249({
-        label: "风险等级",
+        label: "Token",
     }, ...__VLS_functionalComponentArgsRest(__VLS_249));
     __VLS_251.slots.default;
     const __VLS_252 = {}.ElTag;
@@ -1183,95 +1187,98 @@ if (__VLS_ctx.selectedToken) {
     // @ts-ignore
     const __VLS_253 = __VLS_asFunctionalComponent(__VLS_252, new __VLS_252({
         type: (__VLS_ctx.getTokenRiskType(__VLS_ctx.selectedToken.risk)),
+        size: "large",
     }));
     const __VLS_254 = __VLS_253({
         type: (__VLS_ctx.getTokenRiskType(__VLS_ctx.selectedToken.risk)),
+        size: "large",
     }, ...__VLS_functionalComponentArgsRest(__VLS_253));
     __VLS_255.slots.default;
-    (__VLS_ctx.selectedToken.risk);
+    (__VLS_ctx.selectedToken.token);
     var __VLS_255;
     var __VLS_251;
-    var __VLS_231;
-    const __VLS_256 = {}.ElDivider;
-    /** @type {[typeof __VLS_components.ElDivider, typeof __VLS_components.elDivider, typeof __VLS_components.ElDivider, typeof __VLS_components.elDivider, ]} */ ;
+    const __VLS_256 = {}.ElDescriptionsItem;
+    /** @type {[typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, ]} */ ;
     // @ts-ignore
-    const __VLS_257 = __VLS_asFunctionalComponent(__VLS_256, new __VLS_256({}));
-    const __VLS_258 = __VLS_257({}, ...__VLS_functionalComponentArgsRest(__VLS_257));
+    const __VLS_257 = __VLS_asFunctionalComponent(__VLS_256, new __VLS_256({
+        label: "Token ID",
+    }));
+    const __VLS_258 = __VLS_257({
+        label: "Token ID",
+    }, ...__VLS_functionalComponentArgsRest(__VLS_257));
     __VLS_259.slots.default;
+    (__VLS_ctx.selectedToken.tokenId);
     var __VLS_259;
-    const __VLS_260 = {}.ElSpace;
-    /** @type {[typeof __VLS_components.ElSpace, typeof __VLS_components.elSpace, typeof __VLS_components.ElSpace, typeof __VLS_components.elSpace, ]} */ ;
+    const __VLS_260 = {}.ElDescriptionsItem;
+    /** @type {[typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, ]} */ ;
     // @ts-ignore
     const __VLS_261 = __VLS_asFunctionalComponent(__VLS_260, new __VLS_260({
-        direction: "vertical",
-        ...{ style: {} },
+        label: "ΔPPL",
     }));
     const __VLS_262 = __VLS_261({
-        direction: "vertical",
-        ...{ style: {} },
+        label: "ΔPPL",
     }, ...__VLS_functionalComponentArgsRest(__VLS_261));
     __VLS_263.slots.default;
-    const __VLS_264 = {}.ElButton;
-    /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: (__VLS_ctx.getDeltaPPLClass(__VLS_ctx.selectedToken.deltaPPL)) },
+        ...{ style: {} },
+    });
+    (__VLS_ctx.selectedToken.deltaPPL.toFixed(4));
+    var __VLS_263;
+    const __VLS_264 = {}.ElDescriptionsItem;
+    /** @type {[typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, typeof __VLS_components.ElDescriptionsItem, typeof __VLS_components.elDescriptionsItem, ]} */ ;
     // @ts-ignore
     const __VLS_265 = __VLS_asFunctionalComponent(__VLS_264, new __VLS_264({
-        ...{ 'onClick': {} },
-        type: "success",
-        block: true,
+        label: "风险等级",
     }));
     const __VLS_266 = __VLS_265({
-        ...{ 'onClick': {} },
-        type: "success",
-        block: true,
+        label: "风险等级",
     }, ...__VLS_functionalComponentArgsRest(__VLS_265));
-    let __VLS_268;
-    let __VLS_269;
-    let __VLS_270;
-    const __VLS_271 = {
-        onClick: (...[$event]) => {
-            if (!(__VLS_ctx.selectedToken))
-                return;
-            __VLS_ctx.markToken(__VLS_ctx.selectedToken, 'trusted');
-        }
-    };
     __VLS_267.slots.default;
-    var __VLS_267;
-    const __VLS_272 = {}.ElButton;
-    /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+    const __VLS_268 = {}.ElTag;
+    /** @type {[typeof __VLS_components.ElTag, typeof __VLS_components.elTag, typeof __VLS_components.ElTag, typeof __VLS_components.elTag, ]} */ ;
     // @ts-ignore
-    const __VLS_273 = __VLS_asFunctionalComponent(__VLS_272, new __VLS_272({
-        ...{ 'onClick': {} },
-        type: "warning",
-        block: true,
+    const __VLS_269 = __VLS_asFunctionalComponent(__VLS_268, new __VLS_268({
+        type: (__VLS_ctx.getTokenRiskType(__VLS_ctx.selectedToken.risk)),
     }));
-    const __VLS_274 = __VLS_273({
-        ...{ 'onClick': {} },
-        type: "warning",
-        block: true,
-    }, ...__VLS_functionalComponentArgsRest(__VLS_273));
-    let __VLS_276;
-    let __VLS_277;
-    let __VLS_278;
-    const __VLS_279 = {
-        onClick: (...[$event]) => {
-            if (!(__VLS_ctx.selectedToken))
-                return;
-            __VLS_ctx.markToken(__VLS_ctx.selectedToken, 'review');
-        }
-    };
+    const __VLS_270 = __VLS_269({
+        type: (__VLS_ctx.getTokenRiskType(__VLS_ctx.selectedToken.risk)),
+    }, ...__VLS_functionalComponentArgsRest(__VLS_269));
+    __VLS_271.slots.default;
+    (__VLS_ctx.selectedToken.risk);
+    var __VLS_271;
+    var __VLS_267;
+    var __VLS_247;
+    const __VLS_272 = {}.ElDivider;
+    /** @type {[typeof __VLS_components.ElDivider, typeof __VLS_components.elDivider, typeof __VLS_components.ElDivider, typeof __VLS_components.elDivider, ]} */ ;
+    // @ts-ignore
+    const __VLS_273 = __VLS_asFunctionalComponent(__VLS_272, new __VLS_272({}));
+    const __VLS_274 = __VLS_273({}, ...__VLS_functionalComponentArgsRest(__VLS_273));
     __VLS_275.slots.default;
     var __VLS_275;
+    const __VLS_276 = {}.ElSpace;
+    /** @type {[typeof __VLS_components.ElSpace, typeof __VLS_components.elSpace, typeof __VLS_components.ElSpace, typeof __VLS_components.elSpace, ]} */ ;
+    // @ts-ignore
+    const __VLS_277 = __VLS_asFunctionalComponent(__VLS_276, new __VLS_276({
+        direction: "vertical",
+        ...{ style: {} },
+    }));
+    const __VLS_278 = __VLS_277({
+        direction: "vertical",
+        ...{ style: {} },
+    }, ...__VLS_functionalComponentArgsRest(__VLS_277));
+    __VLS_279.slots.default;
     const __VLS_280 = {}.ElButton;
     /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
     // @ts-ignore
     const __VLS_281 = __VLS_asFunctionalComponent(__VLS_280, new __VLS_280({
         ...{ 'onClick': {} },
-        type: "danger",
+        type: "success",
         block: true,
     }));
     const __VLS_282 = __VLS_281({
         ...{ 'onClick': {} },
-        type: "danger",
+        type: "success",
         block: true,
     }, ...__VLS_functionalComponentArgsRest(__VLS_281));
     let __VLS_284;
@@ -1281,14 +1288,64 @@ if (__VLS_ctx.selectedToken) {
         onClick: (...[$event]) => {
             if (!(__VLS_ctx.selectedToken))
                 return;
-            __VLS_ctx.markToken(__VLS_ctx.selectedToken, 'malicious');
+            __VLS_ctx.markToken(__VLS_ctx.selectedToken, 'trusted');
         }
     };
     __VLS_283.slots.default;
     var __VLS_283;
-    var __VLS_263;
+    const __VLS_288 = {}.ElButton;
+    /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+    // @ts-ignore
+    const __VLS_289 = __VLS_asFunctionalComponent(__VLS_288, new __VLS_288({
+        ...{ 'onClick': {} },
+        type: "warning",
+        block: true,
+    }));
+    const __VLS_290 = __VLS_289({
+        ...{ 'onClick': {} },
+        type: "warning",
+        block: true,
+    }, ...__VLS_functionalComponentArgsRest(__VLS_289));
+    let __VLS_292;
+    let __VLS_293;
+    let __VLS_294;
+    const __VLS_295 = {
+        onClick: (...[$event]) => {
+            if (!(__VLS_ctx.selectedToken))
+                return;
+            __VLS_ctx.markToken(__VLS_ctx.selectedToken, 'review');
+        }
+    };
+    __VLS_291.slots.default;
+    var __VLS_291;
+    const __VLS_296 = {}.ElButton;
+    /** @type {[typeof __VLS_components.ElButton, typeof __VLS_components.elButton, typeof __VLS_components.ElButton, typeof __VLS_components.elButton, ]} */ ;
+    // @ts-ignore
+    const __VLS_297 = __VLS_asFunctionalComponent(__VLS_296, new __VLS_296({
+        ...{ 'onClick': {} },
+        type: "danger",
+        block: true,
+    }));
+    const __VLS_298 = __VLS_297({
+        ...{ 'onClick': {} },
+        type: "danger",
+        block: true,
+    }, ...__VLS_functionalComponentArgsRest(__VLS_297));
+    let __VLS_300;
+    let __VLS_301;
+    let __VLS_302;
+    const __VLS_303 = {
+        onClick: (...[$event]) => {
+            if (!(__VLS_ctx.selectedToken))
+                return;
+            __VLS_ctx.markToken(__VLS_ctx.selectedToken, 'malicious');
+        }
+    };
+    __VLS_299.slots.default;
+    var __VLS_299;
+    var __VLS_279;
 }
-var __VLS_227;
+var __VLS_243;
 /** @type {__VLS_StyleScopedClasses['l1-detection']} */ ;
 /** @type {__VLS_StyleScopedClasses['toolbar']} */ ;
 /** @type {__VLS_StyleScopedClasses['toolbar-right']} */ ;
@@ -1308,6 +1365,7 @@ const __VLS_self = (await import('vue')).defineComponent({
         return {
             QuestionFilled: QuestionFilled,
             Loading: Loading,
+            Download: Download,
             VChart: VChart,
             topN: topN,
             viewMode: viewMode,
@@ -1317,6 +1375,7 @@ const __VLS_self = (await import('vue')).defineComponent({
             isDetecting: isDetecting,
             showResults: showResults,
             totalTokens: totalTokens,
+            anomalousTokens: anomalousTokens,
             loadL1Data: loadL1Data,
             topAnomalousTokens: topAnomalousTokens,
             barChartOption: barChartOption,
@@ -1328,6 +1387,7 @@ const __VLS_self = (await import('vue')).defineComponent({
             startDetection: startDetection,
             handleTokenSelect: handleTokenSelect,
             inspectToken: inspectToken,
+            exportResults: exportResults,
             markToken: markToken,
             fullscreenChart: fullscreenChart,
             onChartClick: onChartClick,

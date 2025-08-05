@@ -673,7 +673,6 @@ app.post('/api/l4/optimize/control', (req, res) => {
   if (!session) {
     sendResponse(res, {
       success: false,
-      message: '未找到指定的优化会话'
     }, 200);
     return;
   }

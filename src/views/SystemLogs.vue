@@ -199,15 +199,11 @@
             </el-tag>
           </el-descriptions-item>
         </el-descriptions>
-        <el-divider>操作详情</el-divider>
-        <div class="message-content">
-          {{ selectedLog.message }}
-        </div>
         <el-divider>详细信息</el-divider>
         <div class="related-data">
-          <el-descriptions :column="1" border size="small">
-            <el-descriptions-item label="详细信息">{{ JSON.stringify(selectedLog.details, null, 2) }}</el-descriptions-item>
-          </el-descriptions>
+          <div class="details-content">
+            {{ formatDetailsToNaturalLanguage(selectedLog.details) }}
+          </div>
         </div>
       </div>
       <template #footer>
@@ -259,12 +255,162 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Search, Delete, Download } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useActivityStore, type SystemLog } from '../stores/activityStore'
+import { type SystemLog } from '../stores/activityStore'
 import { useDataStore } from '../stores/dataStore'
 import { saveDataToStorage } from '../services/dataPersistence'
 // 2. Store与响应式数据
-const activityStore = useActivityStore()
 const dataStore = useDataStore()
+
+// 将JSON格式的详细信息转换为自然语言
+const formatDetailsToNaturalLanguage = (details: any): string => {
+  if (!details) return '无详细信息'
+  
+  try {
+    if (typeof details === 'string') {
+      return details
+    }
+    
+    if (typeof details === 'object') {
+      const result: string[] = []
+      
+      // 处理查询信息
+      if (details.query) {
+        result.push(`查询内容: ${details.query}`)
+      }
+      
+      // 处理相似度
+      if (details.similarity !== undefined) {
+        result.push(`相似度: ${(details.similarity * 100).toFixed(2)}%`)
+      }
+      
+      // 处理注入成功状态
+      if (details.injectionSuccess !== undefined) {
+        result.push(`注入状态: ${details.injectionSuccess ? '成功' : '失败'}`)
+      }
+      
+      // 处理触发关键词
+      if (details.triggerKeyword) {
+        result.push(`触发关键词: ${details.triggerKeyword}`)
+      }
+      
+      // 处理样本ID
+      if (details.sampleId) {
+        result.push(`样本ID: ${details.sampleId}`)
+      }
+      
+      // 处理推理结果
+      if (details.reasoning) {
+        result.push(`推理过程: ${details.reasoning}`)
+      }
+      
+      // 处理最终结果
+      if (details.final) {
+        result.push(`最终结果: ${details.final}`)
+      }
+      
+      // 处理判断结果
+      if (details.verdict) {
+        const verdictMap: { [key: string]: string } = {
+          'consistent': '一致',
+          'mismatch': '不一致',
+          'unclear': '不明确'
+        }
+        result.push(`判断结果: ${verdictMap[details.verdict] || details.verdict}`)
+      }
+      
+      // 处理推理长度
+      if (details.reasoningLength !== undefined) {
+        result.push(`推理长度: ${details.reasoningLength}`)
+      }
+      
+      // 处理重复率
+      if (details.repetitionRate !== undefined) {
+        result.push(`重复率: ${(details.repetitionRate * 100).toFixed(2)}%`)
+      }
+      
+      // 处理模板检测
+      if (details.templateDetected !== undefined) {
+        result.push(`模板检测: ${details.templateDetected ? '检测到' : '未检测到'}`)
+      }
+      
+      // 处理不一致数量
+      if (details.mismatchCount !== undefined) {
+        result.push(`不一致数量: ${details.mismatchCount}`)
+      }
+      
+      // 处理优化ID
+      if (details.optimizationId) {
+        result.push(`优化ID: ${details.optimizationId}`)
+      }
+      
+      // 处理代数
+      if (details.generation !== undefined) {
+        result.push(`代数: ${details.generation}`)
+      }
+      
+      // 处理得分
+      if (details.score !== undefined) {
+        result.push(`得分: ${details.score.toFixed(2)}`)
+      }
+      
+      // 处理算法
+      if (details.algorithm) {
+        result.push(`算法: ${details.algorithm}`)
+      }
+      
+      // 处理状态
+      if (details.status) {
+        const statusMap: { [key: string]: string } = {
+          'running': '运行中',
+          'completed': '已完成',
+          'failed': '失败',
+          'paused': '已暂停'
+        }
+        result.push(`状态: ${statusMap[details.status] || details.status}`)
+      }
+      
+      // 处理批量信息
+      if (details.batchInfo) {
+        result.push(`批量信息: 总数${details.batchInfo.totalCount}条，成功${details.batchInfo.successCount}条，成功率${(details.batchInfo.successRate * 100).toFixed(2)}%`)
+      }
+      
+      // 处理异常token信息
+      if (details.anomalousTokens && Array.isArray(details.anomalousTokens)) {
+        result.push(`异常Token数量: ${details.anomalousTokens.length}`)
+        if (details.anomalousTokens.length > 0) {
+          const tokenInfo = details.anomalousTokens.map((token: any, index: number) => 
+            `${index + 1}.${token.token}(风险:${token.risk})`
+          ).join(', ')
+          result.push(`异常Token详情: ${tokenInfo}`)
+        }
+      }
+      
+      // 处理token统计
+      if (details.totalTokens !== undefined) {
+        result.push(`总Token数: ${details.totalTokens}`)
+      }
+      
+      if (details.highRiskCount !== undefined) {
+        result.push(`高风险Token数: ${details.highRiskCount}`)
+      }
+      
+      if (details.mediumRiskCount !== undefined) {
+        result.push(`中风险Token数: ${details.mediumRiskCount}`)
+      }
+      
+      if (details.lowRiskCount !== undefined) {
+        result.push(`低风险Token数: ${details.lowRiskCount}`)
+      }
+      
+      return result.length > 0 ? result.join('\n') : '无详细信息'
+    }
+    
+    return '无详细信息'
+  } catch (error) {
+    console.error('格式化详细信息失败:', error)
+    return '格式化详细信息失败'
+  }
+}
 
 const logLevel = ref('all')
 const logSource = ref('all')
@@ -540,8 +686,37 @@ const viewLogDetail = (log: SystemLog) => {
 
 const exportSingleLog = () => {
   if (selectedLog.value) {
-    console.log('导出单个日志:', selectedLog.value.id)
-    // TODO: 实现单个日志导出
+    try {
+      const exportData = {
+        exportTime: new Date().toLocaleString('zh-CN'),
+        logInfo: {
+          id: selectedLog.value.id,
+          timestamp: selectedLog.value.timestamp,
+          level: selectedLog.value.level,
+          page: selectedLog.value.page,
+          operation: selectedLog.value.operation,
+          riskLevel: selectedLog.value.riskLevel,
+          message: selectedLog.value.message,
+          details: selectedLog.value.details
+        }
+      }
+      
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      const timestamp = selectedLog.value.timestamp.replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
+      link.download = `单个日志_${selectedLog.value.page}_${timestamp}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      
+      ElMessage.success('单个日志导出成功')
+    } catch (error) {
+      console.error('导出单个日志失败:', error)
+      ElMessage.error('导出单个日志失败，请重试')
+    }
   }
 }
 
@@ -710,6 +885,27 @@ onUnmounted(() => {
 }
 .log-detail .related-data .metadata-tag {
   margin: 2px;
+}
+
+/* 详细信息内容样式 */
+.details-content {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #1890ff;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #333;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.details-content:empty::before {
+  content: '无详细信息';
+  color: #999;
+  font-style: italic;
 }
 .realtime-card {
   margin-top: 20px;

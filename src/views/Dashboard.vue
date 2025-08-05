@@ -402,15 +402,11 @@
           </el-tag>
         </el-descriptions-item>
       </el-descriptions>
-      <el-divider>操作详情</el-divider>
-      <div class="message-content">
-        {{ selectedActivity.page }} {{ selectedActivity.operation }}: {{ JSON.stringify(selectedActivity.details) }}
-      </div>
       <el-divider>详细信息</el-divider>
       <div class="related-data">
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="详细信息">{{ JSON.stringify(selectedActivity.details, null, 2) }}</el-descriptions-item>
-        </el-descriptions>
+        <div class="details-content">
+          {{ formatDetailsToNaturalLanguage(selectedActivity.details) }}
+        </div>
       </div>
     </div>
     <template #footer>
@@ -426,7 +422,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '../stores'
-import { useActivityStore } from '../stores/activityStore'
 import { useDataStore } from '../stores/dataStore'
 import { TrendCharts, Connection, ChatLineSquare, Setting, Monitor, Warning, InfoFilled, CircleCheck } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -454,20 +449,165 @@ use([
 
 // 3. 初始化Store和Router
 const store = useAppStore()
-const activityStore = useActivityStore()
 const dataStore = useDataStore()
 const router = useRouter()
 
-// 4. 计算属性 - 从Store获取检测结果摘要
-const l1Summary = computed(() => store.detectionResults.l1.summary)
-const l2Summary = computed(() => store.detectionResults.l2.summary)
-const l3Summary = computed(() => store.detectionResults.l3.summary)
-const l4Summary = computed(() => store.detectionResults.l4.summary)
+// 将JSON格式的详细信息转换为自然语言
+const formatDetailsToNaturalLanguage = (details: any): string => {
+  if (!details) return '无详细信息'
+  
+  try {
+    if (typeof details === 'string') {
+      return details
+    }
+    
+    if (typeof details === 'object') {
+      const result: string[] = []
+      
+      // 处理查询信息
+      if (details.query) {
+        result.push(`查询内容: ${details.query}`)
+      }
+      
+      // 处理相似度
+      if (details.similarity !== undefined) {
+        result.push(`相似度: ${(details.similarity * 100).toFixed(2)}%`)
+      }
+      
+      // 处理注入成功状态
+      if (details.injectionSuccess !== undefined) {
+        result.push(`注入状态: ${details.injectionSuccess ? '成功' : '失败'}`)
+      }
+      
+      // 处理触发关键词
+      if (details.triggerKeyword) {
+        result.push(`触发关键词: ${details.triggerKeyword}`)
+      }
+      
+      // 处理样本ID
+      if (details.sampleId) {
+        result.push(`样本ID: ${details.sampleId}`)
+      }
+      
+      // 处理推理结果
+      if (details.reasoning) {
+        result.push(`推理过程: ${details.reasoning}`)
+      }
+      
+      // 处理最终结果
+      if (details.final) {
+        result.push(`最终结果: ${details.final}`)
+      }
+      
+      // 处理判断结果
+      if (details.verdict) {
+        const verdictMap: { [key: string]: string } = {
+          'consistent': '一致',
+          'mismatch': '不一致',
+          'unclear': '不明确'
+        }
+        result.push(`判断结果: ${verdictMap[details.verdict] || details.verdict}`)
+      }
+      
+      // 处理推理长度
+      if (details.reasoningLength !== undefined) {
+        result.push(`推理长度: ${details.reasoningLength}`)
+      }
+      
+      // 处理重复率
+      if (details.repetitionRate !== undefined) {
+        result.push(`重复率: ${(details.repetitionRate * 100).toFixed(2)}%`)
+      }
+      
+      // 处理模板检测
+      if (details.templateDetected !== undefined) {
+        result.push(`模板检测: ${details.templateDetected ? '检测到' : '未检测到'}`)
+      }
+      
+      // 处理不一致数量
+      if (details.mismatchCount !== undefined) {
+        result.push(`不一致数量: ${details.mismatchCount}`)
+      }
+      
+      // 处理优化ID
+      if (details.optimizationId) {
+        result.push(`优化ID: ${details.optimizationId}`)
+      }
+      
+      // 处理代数
+      if (details.generation !== undefined) {
+        result.push(`代数: ${details.generation}`)
+      }
+      
+      // 处理得分
+      if (details.score !== undefined) {
+        result.push(`得分: ${details.score.toFixed(2)}`)
+      }
+      
+      // 处理算法
+      if (details.algorithm) {
+        result.push(`算法: ${details.algorithm}`)
+      }
+      
+      // 处理状态
+      if (details.status) {
+        const statusMap: { [key: string]: string } = {
+          'running': '运行中',
+          'completed': '已完成',
+          'failed': '失败',
+          'paused': '已暂停'
+        }
+        result.push(`状态: ${statusMap[details.status] || details.status}`)
+      }
+      
+      // 处理批量信息
+      if (details.batchInfo) {
+        result.push(`批量信息: 总数${details.batchInfo.totalCount}条，成功${details.batchInfo.successCount}条，成功率${(details.batchInfo.successRate * 100).toFixed(2)}%`)
+      }
+      
+      // 处理异常token信息
+      if (details.anomalousTokens && Array.isArray(details.anomalousTokens)) {
+        result.push(`异常Token数量: ${details.anomalousTokens.length}`)
+        if (details.anomalousTokens.length > 0) {
+          const tokenInfo = details.anomalousTokens.map((token: any, index: number) => 
+            `${index + 1}.${token.token}(风险:${token.risk})`
+          ).join(', ')
+          result.push(`异常Token详情: ${tokenInfo}`)
+        }
+      }
+      
+      // 处理token统计
+      if (details.totalTokens !== undefined) {
+        result.push(`总Token数: ${details.totalTokens}`)
+      }
+      
+      if (details.highRiskCount !== undefined) {
+        result.push(`高风险Token数: ${details.highRiskCount}`)
+      }
+      
+      if (details.mediumRiskCount !== undefined) {
+        result.push(`中风险Token数: ${details.mediumRiskCount}`)
+      }
+      
+      if (details.lowRiskCount !== undefined) {
+        result.push(`低风险Token数: ${details.lowRiskCount}`)
+      }
+      
+      return result.length > 0 ? result.join('\n') : '无详细信息'
+    }
+    
+    return '无详细信息'
+  } catch (error) {
+    console.error('格式化详细信息失败:', error)
+    return '格式化详细信息失败'
+  }
+}
 
-// 5. 计算属性 - 获取最近活动数据
+
+// 4. 计算属性 - 获取最近活动数据
 const recentActivities = computed(() => dataStore.getOperationRecords.slice(0, 6))
 
-// 6. 图表配置 - 检测历史趋势图
+// 5. 图表配置 - 检测历史趋势图
 const trendChartOption = computed(() => {
   const trendData = dataStore.getTrendData
   
@@ -525,7 +665,7 @@ const trendChartOption = computed(() => {
   }
 })
 
-// 7. 图表配置 - 风险分布饼图
+// 6. 图表配置 - 风险分布饼图
 const riskDistributionOption = computed(() => {
   const riskDistribution = dataStore.getRiskDistribution
   
@@ -559,16 +699,7 @@ const riskDistributionOption = computed(() => {
   }
 })
 
-// 8. 工具函数 - 获取风险等级类型
-const getRiskLevelType = (level: string) => {
-  switch (level) {
-    case 'low': return 'success'
-    case 'medium': return 'warning'
-    case 'high': return 'danger'
-    default: return 'info'
-  }
-}
-
+// 7. 工具函数 - 获取风险等级类型
 // 获取检测层级标签类型
 const getLayerTagType = (layer: string) => {
   switch (layer) {
@@ -603,48 +734,8 @@ const getRiskLevelText = (level: string) => {
   }
 }
 
-// 10. 工具函数 - 获取状态类型
-const getStatusType = (status: string) => {
-  switch (status) {
-    case 'idle': return 'info'
-    case 'running': return 'warning'
-    case 'completed': return 'success'
-    case 'failed': return 'danger'
-    default: return 'info'
-  }
-}
 
-// 11. 工具函数 - 获取状态文本
-const getStatusText = (status: string) => {
-  switch (status) {
-    case 'idle': return '空闲'
-    case 'running': return '运行中'
-    case 'completed': return '已完成'
-    case 'failed': return '失败'
-    default: return '未知'
-  }
-}
-
-// 12. 工具函数 - 获取活动状态类型
-const getActivityStatusType = (status: string) => {
-  switch (status) {
-    case '完成': return 'success'
-    case '警告': return 'warning'
-    case '运行中': return 'primary'
-    case '错误': return 'danger'
-    default: return 'info'
-  }
-}
-
-// 13. 事件处理函数 - 刷新数据
-const refreshData = () => {
-  // 由于使用了computed，数据会自动更新
-  // 这里可以添加一些视觉反馈
-  ElMessage.success('数据已刷新')
-  console.log('刷新数据')
-}
-
-// 14. 事件处理函数 - 显示评价标准
+// 10. 事件处理函数 - 显示评价标准
 const evaluationCriteriaVisible = ref(false)
 const activeTab = ref('l1')
 
@@ -653,7 +744,7 @@ const showEvaluationCriteria = () => {
   evaluationCriteriaVisible.value = true
 }
 
-// 15. 事件处理函数 - 导出报告
+// 11. 事件处理函数 - 导出报告
 const exportReport = () => {
   // 生成风险分布报告
   const riskDistribution = dataStore.getRiskDistribution
@@ -716,12 +807,12 @@ const exportReport = () => {
   console.log('导出报告')
 }
 
-// 15. 事件处理函数 - 查看全部日志
+// 12. 事件处理函数 - 查看全部日志
 const viewAllLogs = () => {
   router.push('/system-logs')
 }
 
-// 16. 事件处理函数 - 查看详情
+// 13. 事件处理函数 - 查看详情
 const selectedActivity = ref<any>(null)
 const activityDetailVisible = ref(false)
 
@@ -730,7 +821,7 @@ const viewDetails = (activity: any) => {
   activityDetailVisible.value = true
 }
 
-// 17. 生命周期钩子 - 组件挂载时初始化数据
+// 14. 生命周期钩子 - 组件挂载时初始化数据
 onMounted(() => {
   // 模拟加载数据
   store.updateDetectionResults('l1', {
@@ -749,16 +840,16 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 18. 样式定义 */
+/* 15. 样式定义 */
 
-/* 18.1 主容器样式 */
+/* 15.1 主容器样式 */
 .dashboard {
   padding: 0;
   max-width: 100%;
   width: 100%;
 }
 
-/* 18.2 项目介绍框样式 */
+/* 15.2 项目介绍框样式 */
 .project-intro-card {
   margin-bottom: 30px;
   background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #74b9ff 100%);
@@ -805,7 +896,7 @@ onMounted(() => {
   margin-top: 25px;
 }
 
-/* 18.3 模块项样式 */
+/* 15.3 模块项样式 */
 .module-item {
   display: flex;
   align-items: flex-start;
@@ -828,7 +919,7 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-/* 18.4 模块颜色主题 */
+/* 15.4 模块颜色主题 */
 .l1-color {
   color: #74b9ff;
 }
@@ -845,7 +936,7 @@ onMounted(() => {
   color: #fd79a8;
 }
 
-/* 18.5 评价标准对话框样式 */
+/* 15.5 评价标准对话框样式 */
 .criteria-header {
   display: flex;
   align-items: center;
@@ -899,7 +990,7 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* 18.5 图表区域样式 */
+/* 15.5 图表区域样式 */
 .dashboard-charts {
   margin-bottom: 20px;
 }
@@ -915,7 +1006,7 @@ onMounted(() => {
   width: 100%;
 }
 
-/* 18.6 最近检测活动表格样式 */
+/* 15.6 最近检测活动表格样式 */
 .recent-activities .el-table {
   margin-top: 10px;
 }
@@ -943,5 +1034,26 @@ onMounted(() => {
 .recent-activities .el-table .el-button {
   font-size: 14px;
   padding: 8px 16px;
+}
+
+/* 详细信息内容样式 */
+.details-content {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #1890ff;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #333;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.details-content:empty::before {
+  content: '无详细信息';
+  color: #999;
+  font-style: italic;
 }
 </style> 

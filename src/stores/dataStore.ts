@@ -218,7 +218,7 @@ export const useDataStore = defineStore('data', () => {
       id: generateId(),
       timestamp: getCurrentTimestamp(),
       page: 'L2',
-      operation: type === 'comparison' ? '语义漂移检测' : '注入分析',
+      operation: type === 'comparison' ? '语义漂移检测' : 'prompt注入分析',
       details: {
         query: data.query,
         similarity: data.similarity,
